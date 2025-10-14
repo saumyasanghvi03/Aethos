@@ -1,0 +1,532 @@
+/* Aethos Platform - Indian Algorithmic Trading */
+.main-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 2rem;
+    border-radius: 15px;
+    margin-bottom: 2rem;
+    border: 1px solid #2d3748;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.platform-tagline {
+    color: #e2e8f0;
+    font-size: 1.2rem;
+    margin-top: 0.5rem;
+    font-weight: 300;
+}
+
+.metric-container {
+    background: #1e293b;
+    padding: 1rem;
+    border-radius: 10px;
+    border-left: 4px solid #00d4aa;
+    margin: 0.5rem 0;
+    transition: all 0.3s ease;
+}
+
+.metric-container:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 212, 170, 0.2);
+}
+
+.metric-label {
+    color: #94a3b8;
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.metric-value {
+    color: #f1f5f9;
+    font-size: 1.4rem;
+    font-weight: bold;
+    margin: 0.5rem 0;
+}
+
+.indian-flag {
+    background: linear-gradient(135deg, #ff9933 0%, #ffffff 50%, #138808 100%);
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    color: #000;
+    font-weight: bold;
+    text-align: center;
+    margin-top: 1rem;
+    border: 2px solid #1e293b;
+}
+
+/* Bot Cards and Status */
+.bot-card {
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin: 1rem 0;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.bot-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #00d4aa, #0099ff);
+}
+
+.bot-card:hover {
+    border-color: #00d4aa;
+    transform: translateY(-3px);
+    box-shadow: 0 10px 25px rgba(0, 212, 170, 0.15);
+}
+
+.bot-status-running {
+    border-left: 4px solid #00d4aa;
+}
+
+.bot-status-paused {
+    border-left: 4px solid #f59e0b;
+}
+
+.bot-status-stopped {
+    border-left: 4px solid #ef4444;
+}
+
+/* Signal Indicators */
+.signal-buy {
+    background: linear-gradient(135deg, #00d4aa 0%, #00a085 100%);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-weight: bold;
+    display: inline-block;
+    margin: 0.2rem;
+    box-shadow: 0 4px 15px rgba(0, 212, 170, 0.3);
+}
+
+.signal-sell {
+    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-weight: bold;
+    display: inline-block;
+    margin: 0.2rem;
+    box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
+}
+
+.signal-neutral {
+    background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-weight: bold;
+    display: inline-block;
+    margin: 0.2rem;
+}
+
+/* Strategy Cards */
+.strategy-card {
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin: 1rem 0;
+    transition: all 0.3s ease;
+    border-left: 4px solid #6366f1;
+}
+
+.strategy-card:hover {
+    border-color: #6366f1;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(99, 102, 241, 0.15);
+}
+
+/* Risk Management */
+.risk-meter {
+    height: 8px;
+    background: #334155;
+    border-radius: 4px;
+    margin: 0.5rem 0;
+    overflow: hidden;
+    position: relative;
+}
+
+.risk-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.5s ease;
+    position: relative;
+}
+
+.risk-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
+.risk-low { background: linear-gradient(90deg, #00d4aa, #00b894); }
+.risk-medium { background: linear-gradient(90deg, #f59e0b, #e67e22); }
+.risk-high { background: linear-gradient(90deg, #ef4444, #dc2626); }
+
+/* Performance Indicators */
+.performance-positive {
+    color: #00d4aa;
+    font-weight: bold;
+    background: rgba(0, 212, 170, 0.1);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    display: inline-block;
+}
+
+.performance-negative {
+    color: #ff6b6b;
+    font-weight: bold;
+    background: rgba(255, 107, 107, 0.1);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    display: inline-block;
+}
+
+/* Trading Controls */
+.trading-control {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 0.5rem 0;
+    transition: all 0.3s ease;
+}
+
+.trading-control:hover {
+    border-color: #00d4aa;
+    background: rgba(0, 212, 170, 0.05);
+}
+
+.control-active {
+    border-color: #00d4aa;
+    background: rgba(0, 212, 170, 0.1);
+    box-shadow: 0 0 20px rgba(0, 212, 170, 0.2);
+}
+
+/* Dark theme enhancements */
+.stApp {
+    background-color: #0f172a;
+    color: #f8fafc;
+}
+
+.stPlotlyChart {
+    border-radius: 10px;
+    border: 1px solid #334155;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #1e293b;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #00d4aa, #0099ff);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, #00b894, #0077cc);
+}
+
+/* Live indicators */
+.live-pulse {
+    animation: pulse 2s infinite;
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: #00d4aa;
+    border-radius: 50%;
+    margin-right: 8px;
+}
+
+@keyframes pulse {
+    0% { 
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(0, 212, 170, 0.7);
+    }
+    70% { 
+        transform: scale(1);
+        box-shadow: 0 0 0 10px rgba(0, 212, 170, 0);
+    }
+    100% { 
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(0, 212, 170, 0);
+    }
+}
+
+/* Bot performance indicators */
+.performance-indicator {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+
+.performance-good { 
+    background: #00d4aa;
+    box-shadow: 0 0 10px rgba(0, 212, 170, 0.5);
+}
+.performance-warning { 
+    background: #f59e0b;
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+}
+.performance-poor { 
+    background: #ef4444;
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+}
+
+/* Strategy parameters */
+.param-slider {
+    margin: 1rem 0;
+    padding: 1rem;
+    background: rgba(30, 41, 59, 0.5);
+    border-radius: 8px;
+    border: 1px solid #334155;
+}
+
+.param-value {
+    font-weight: bold;
+    color: #00d4aa;
+    background: rgba(0, 212, 170, 0.1);
+    padding: 0.3rem 0.8rem;
+    border-radius: 20px;
+    display: inline-block;
+    margin-top: 0.5rem;
+}
+
+/* Tax and Regulatory Styles */
+.regulatory-alert {
+    background: linear-gradient(135deg, #fef3c7 0%, #fef9e7 100%);
+    border: 2px solid #d97706;
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin: 1rem 0;
+    color: #78350f;
+}
+
+.regulatory-alert h4 {
+    color: #92400e;
+    margin-bottom: 1rem;
+    border-bottom: 2px solid #d97706;
+    padding-bottom: 0.5rem;
+}
+
+.regulatory-alert ul {
+    margin: 0;
+    padding-left: 1.5rem;
+}
+
+.regulatory-alert li {
+    margin: 0.5rem 0;
+    color: #78350f;
+}
+
+/* Button Enhancements */
+.stButton > button {
+    border-radius: 8px;
+    border: 1px solid;
+    transition: all 0.3s ease;
+    font-weight: 600;
+}
+
+.stButton > button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+/* Tab Enhancements */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 2px;
+}
+
+.stTabs [data-baseweb="tab"] {
+    height: 50px;
+    white-space: pre-wrap;
+    background-color: #1e293b;
+    border-radius: 8px 8px 0px 0px;
+    gap: 1px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    border: 1px solid #334155;
+    border-bottom: none;
+}
+
+.stTabs [aria-selected="true"] {
+    background-color: #00d4aa;
+    color: #0f172a;
+    font-weight: bold;
+}
+
+/* Dataframe Styling */
+.dataframe {
+    border: 1px solid #334155 !important;
+    border-radius: 8px !important;
+}
+
+.dataframe thead {
+    background: #1e293b !important;
+    color: #f8fafc !important;
+}
+
+.dataframe tbody tr:nth-child(even) {
+    background: rgba(30, 41, 59, 0.5) !important;
+}
+
+.dataframe tbody tr:nth-child(odd) {
+    background: rgba(15, 23, 42, 0.5) !important;
+}
+
+/* Metric Cards Enhancement */
+[data-testid="metric-container"] {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 1rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+[data-testid="metric-container"]:hover {
+    border-color: #00d4aa;
+    transform: translateY(-2px);
+    transition: all 0.3s ease;
+}
+
+/* Expander Styling */
+.streamlit-expanderHeader {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    font-weight: 600;
+}
+
+.streamlit-expanderContent {
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid #334155;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+}
+
+/* Input Field Styling */
+.stTextInput > div > div > input,
+.stNumberInput > div > div > input,
+.stSelectbox > div > div > div,
+.stMultiselect > div > div > div {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #f8fafc;
+    border-radius: 6px;
+}
+
+.stTextInput > div > div > input:focus,
+.stNumberInput > div > div > input:focus,
+.stSelectbox > div > div > div:focus,
+.stMultiselect > div > div > div:focus {
+    border-color: #00d4aa;
+    box-shadow: 0 0 0 1px #00d4aa;
+}
+
+/* Slider Styling */
+.stSlider > div > div > div {
+    background: #334155;
+}
+
+.stSlider > div > div > div > div {
+    background: #00d4aa;
+}
+
+/* Checkbox and Radio Styling */
+.stCheckbox > label,
+.stRadio > label {
+    color: #f8fafc;
+}
+
+.stCheckbox [data-baseweb="checkbox"] > div {
+    background: #1e293b;
+    border: 2px solid #334155;
+}
+
+.stCheckbox [data-baseweb="checkbox"]:hover > div {
+    border-color: #00d4aa;
+}
+
+/* Success, Error, Info Styling */
+.stAlert {
+    border-radius: 8px;
+    border: 1px solid;
+}
+
+.stSuccess {
+    background: rgba(0, 212, 170, 0.1);
+    border-color: #00d4aa;
+}
+
+.stError {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: #ef4444;
+}
+
+.stInfo {
+    background: rgba(59, 130, 246, 0.1);
+    border-color: #3b82f6;
+}
+
+.stWarning {
+    background: rgba(245, 158, 11, 0.1);
+    border-color: #f59e0b;
+}
+
+/* Loading Spinner */
+.stSpinner > div {
+    border-color: #00d4aa transparent transparent transparent;
+}
+
+/* Progress Bar */
+.stProgress > div > div > div > div {
+    background: linear-gradient(90deg, #00d4aa, #0099ff);
+}
+
+/* Sidebar Styling */
+.css-1d391kg {
+    background: #0f172a;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .main-header {
+        padding: 1rem;
+    }
+    
+    .platform-tagline {
+        font-size: 1rem;
+    }
+    
+    .bot-card {
+        padding: 1rem;
+    }
+}
