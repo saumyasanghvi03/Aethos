@@ -20,15 +20,42 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Load custom CSS
-with open('styles.css') as f:
-    st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
+# Load custom CSS (create a basic CSS if file doesn't exist)
+try:
+    with open('styles.css') as f:
+        st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
+except FileNotFoundError:
+    # Basic CSS as fallback
+    st.markdown("""
+    <style>
+    .main-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 2rem;
+        border-radius: 10px;
+        margin-bottom: 2rem;
+        color: white;
+    }
+    .platform-tagline {
+        font-size: 1.2rem;
+        opacity: 0.9;
+        margin-top: 0.5rem;
+    }
+    .regulatory-alert {
+        background-color: #fff3cd;
+        border: 1px solid #ffeaa7;
+        border-radius: 5px;
+        padding: 1rem;
+        margin: 1rem 0;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 class DeltaExchange:
-    def _init_(self):
+    def __init__(self):  # Fixed: __init__ instead of _init_
         self.base_url = "https://api.delta.exchange"
-        self.api_key = st.secrets.get("DELTA_API_KEY", "")
-        self.api_secret = st.secrets.get("DELTA_API_SECRET", "")
+        # Use st.secrets or environment variables
+        self.api_key = st.secrets.get("DELTA_API_KEY", "") if hasattr(st, 'secrets') else ""
+        self.api_secret = st.secrets.get("DELTA_API_SECRET", "") if hasattr(st, 'secrets') else ""
     
     def _sign_request(self, method, path, body=''):
         timestamp = str(int(time.time()))
@@ -45,7 +72,7 @@ class DeltaExchange:
         try:
             response = requests.get(f"{self.base_url}/v2/products", timeout=10)
             if response.status_code == 200:
-                return response.json()['result']
+                return response.json().get('result', [])
             return []
         except Exception as e:
             st.error(f"Error fetching Delta products: {e}")
@@ -56,7 +83,7 @@ class DeltaExchange:
         try:
             response = requests.get(f"{self.base_url}/v2/tickers/{symbol}", timeout=10)
             if response.status_code == 200:
-                return response.json()['result']
+                return response.json().get('result')
             return None
         except Exception as e:
             st.error(f"Error fetching Delta ticker: {e}")
@@ -67,7 +94,7 @@ class DeltaExchange:
         try:
             response = requests.get(f"{self.base_url}/v2/orderbook/{symbol}", timeout=10)
             if response.status_code == 200:
-                return response.json()['result']
+                return response.json().get('result')
             return None
         except Exception as e:
             st.error(f"Error fetching Delta orderbook: {e}")
@@ -86,14 +113,14 @@ class DeltaExchange:
                 timeout=10
             )
             if response.status_code == 200:
-                return response.json()['result']
+                return response.json().get('result', [])
             return []
         except Exception as e:
             st.error(f"Error fetching Delta OHLC: {e}")
             return []
 
 class IndianExchangeData:
-    def _init_(self):
+    def __init__(self):  # Fixed: __init__ instead of _init_
         self.delta = DeltaExchange()
     
     def get_all_markets(self):
@@ -103,13 +130,13 @@ class IndianExchangeData:
         # Delta Exchange products
         delta_products = self.delta.get_products()
         for product in delta_products[:20]:
-            if product.get('contract_type') in ['spot', 'perpetual_futures', 'futures']:
+            if product and product.get('contract_type') in ['spot', 'perpetual_futures', 'futures']:
                 markets.append({
                     'exchange': 'Delta',
-                    'symbol': product['symbol'],
-                    'product': product['contract_type'],
-                    'base_currency': product['underlying_asset']['symbol'],
-                    'quote_currency': product['settling_asset']['symbol'],
+                    'symbol': product.get('symbol', ''),
+                    'product': product.get('contract_type', ''),
+                    'base_currency': product.get('underlying_asset', {}).get('symbol', ''),
+                    'quote_currency': product.get('settling_asset', {}).get('symbol', ''),
                     'tick_size': product.get('tick_size', 0.01)
                 })
         
@@ -134,17 +161,18 @@ class IndianExchangeData:
         # Delta prices
         products = self.delta.get_products()[:10]
         for product in products:
-            ticker = self.delta.get_ticker(product['symbol'])
-            if ticker:
-                prices.append({
-                    'exchange': 'Delta',
-                    'symbol': product['symbol'],
-                    'price': float(ticker['close']),
-                    'volume': float(ticker['volume']),
-                    'change_24h': float(ticker.get('change_24h', 0)),
-                    'product_type': product['contract_type'],
-                    'timestamp': datetime.now()
-                })
+            if product:
+                ticker = self.delta.get_ticker(product.get('symbol'))
+                if ticker:
+                    prices.append({
+                        'exchange': 'Delta',
+                        'symbol': product.get('symbol', ''),
+                        'price': float(ticker.get('close', 0)),
+                        'volume': float(ticker.get('volume', 0)),
+                        'change_24h': float(ticker.get('change_24h', 0)),
+                        'product_type': product.get('contract_type', ''),
+                        'timestamp': datetime.now()
+                    })
         
         # Add Indian exchange prices (simulated)
         indian_prices = {
@@ -278,7 +306,7 @@ class TradingStrategies:
 class SemiAutomatedBots:
     """Semi-automated bots that generate trading signals"""
     
-    def _init_(self):
+    def __init__(self):  # Fixed: __init__ instead of _init_
         self.strategies = TradingStrategies()
         self.exchange_data = IndianExchangeData()
     
@@ -452,7 +480,7 @@ class SemiAutomatedBots:
 class AutomatedTradingBot:
     """Fully automated trading bot with paper and live trading"""
     
-    def _init_(self):
+    def __init__(self):  # Fixed: __init__ instead of _init_
         self.exchange_data = IndianExchangeData()
         self.paper_balance = 100000  # Starting paper balance in INR
         self.positions = {}
@@ -591,7 +619,7 @@ class AutomatedTradingBot:
     
     def create_paper_trading_interface(self):
         """Create paper trading interface"""
-        st.write("📊 Paper Trading Account**")
+        st.write("📊 Paper Trading Account")
         
         # Account overview
         col1, col2, col3, col4 = st.columns(4)
@@ -601,10 +629,10 @@ class AutomatedTradingBot:
         with col2:
             st.metric("Open Positions", len(self.positions))
         with col3:
-            total_pnl = sum([pos['unrealized_pnl'] for pos in self.positions.values()])
+            total_pnl = sum([pos.get('unrealized_pnl', 0) for pos in self.positions.values()])
             st.metric("Unrealized P&L", f"₹{total_pnl:,.2f}")
         with col4:
-            realized_pnl = sum([trade['pnl'] for trade in self.trade_history])
+            realized_pnl = sum([trade.get('pnl', 0) for trade in self.trade_history])
             st.metric("Realized P&L", f"₹{realized_pnl:,.2f}")
         
         # Manual trading
@@ -625,16 +653,16 @@ class AutomatedTradingBot:
         # Positions table
         if self.positions:
             st.write("*Current Positions*")
-            positions_df = pd.DataFrame([
-                {
+            positions_data = []
+            for asset, pos in self.positions.items():
+                positions_data.append({
                     'Asset': asset,
-                    'Quantity': pos['quantity'],
-                    'Entry Price': pos['entry_price'],
+                    'Quantity': pos.get('quantity', 0),
+                    'Entry Price': pos.get('entry_price', 0),
                     'Current Price': price,
-                    'P&L': pos['unrealized_pnl']
-                }
-                for asset, pos in self.positions.items()
-            ])
+                    'P&L': pos.get('unrealized_pnl', 0)
+                })
+            positions_df = pd.DataFrame(positions_data)
             st.dataframe(positions_df, use_container_width=True)
         
         # Trade history
@@ -698,7 +726,7 @@ class AutomatedTradingBot:
     
     def create_live_trading_interface(self):
         """Create live trading interface"""
-        st.write("🚀 Live Trading**")
+        st.write("🚀 Live Trading")
         
         st.info("""
         ⚠ *Live Trading Warning*: 
@@ -745,7 +773,7 @@ class AutomatedTradingBot:
     
     def create_performance_dashboard(self):
         """Create performance monitoring dashboard"""
-        st.write("📈 Bot Performance Analytics**")
+        st.write("📈 Bot Performance Analytics")
         
         # Generate sample performance data
         dates = pd.date_range(start='2024-01-01', end=datetime.now(), freq='D')
@@ -795,7 +823,7 @@ class AutomatedTradingBot:
         st.dataframe(pd.DataFrame(strategies_data), use_container_width=True)
 
 class IndianTraderTools:
-    def _init_(self):
+    def __init__(self):  # Fixed: __init__ instead of _init_
         self.exchange_data = IndianExchangeData()
     
     def create_tax_calculator(self):
@@ -887,7 +915,7 @@ class IndianTraderTools:
             st.metric("Adoption Rate", "High", "📈")
         
         # Indian crypto adoption trends
-        st.write("🇮🇳 Indian Crypto Adoption Trends**")
+        st.write("🇮🇳 Indian Crypto Adoption Trends")
         
         # Generate adoption data
         years = ['2020', '2021', '2022', '2023', '2024']
@@ -966,7 +994,7 @@ class IndianTraderTools:
                 st.write("Indian regulators continue to develop comprehensive framework for digital assets. Stay updated with latest compliance requirements.")
 
 class AethosIndiaPlatform:
-    def _init_(self):
+    def __init__(self):  # Fixed: __init__ instead of _init_
         self.exchange_data = IndianExchangeData()
         self.semi_bots = SemiAutomatedBots()
         self.auto_bots = AutomatedTradingBot()
@@ -1185,6 +1213,6 @@ class AethosIndiaPlatform:
             self.create_markets_overview()
 
 # Run the application
-if _name_ == "_main_":
+if __name__ == "__main__":  # Fixed: __name__ instead of _name_
     platform = AethosIndiaPlatform()
     platform.run()
