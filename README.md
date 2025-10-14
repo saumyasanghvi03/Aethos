@@ -1,33 +1,50 @@
-# Aethos - Medical AI Assistant
+# Aethos - BlockVista Terminal for Indian Crypto Traders
 
 ## Overview
 
-Aethos is an advanced medical AI assistant powered by Google's Gemini Pro model, designed to provide intelligent healthcare information and support. Built with a modern tech stack, Aethos offers an interactive conversational interface for medical queries, health assessments, and general wellness guidance.
+Aethos is an advanced trading platform specifically designed for the Indian cryptocurrency market. As part of the BlockVista ecosystem, Aethos empowers Indian crypto traders with professional-grade tools, real-time analytics, and compliance features tailored for the Indian regulatory landscape.
+
+Our vision is to democratize algorithmic trading and provide Indian traders with institutional-quality infrastructure for navigating the dynamic crypto markets with confidence and precision.
 
 ## Features
 
-- **AI-Powered Medical Assistance**: Leverages Google's Gemini Pro 1.5 Flash model for accurate and contextual medical information
-- **Conversational Interface**: Natural, chat-based interaction for easy communication
-- **Comprehensive Health Support**: Answers medical questions, provides health tips, and offers general wellness guidance
-- **Modern UI**: Built with Gradio for an intuitive and responsive user experience
-- **Session Management**: Maintains conversation history for context-aware responses
-- **Safety-First Design**: Includes appropriate disclaimers and encourages professional medical consultation
+### Trading Capabilities
+- **Semi-Automated Trading Bots**: Customizable algorithmic strategies with manual oversight
+- **Fully Automated Trading**: Set-and-forget algorithmic execution with advanced risk management
+- **Multi-Exchange Support**: Seamless integration with major cryptocurrency exchanges
+- **Indian Trading Pairs**: Native support for INR pairs (BTC/INR, ETH/INR, USDT/INR, etc.)
+
+### Analytics & Intelligence
+- **Real-Time Market Analytics**: Live price tracking, volume analysis, and market depth visualization
+- **Technical Indicators**: Comprehensive suite of indicators (RSI, MACD, Bollinger Bands, and more)
+- **Portfolio Tracking**: Monitor your holdings across multiple exchanges in one unified dashboard
+- **Historical Data Analysis**: Backtesting capabilities with extensive historical market data
+
+### India-Specific Tools
+- **INR Integration**: Native rupee support for deposits, withdrawals, and P&L calculations
+- **Tax Compliance Tools**: Automated reporting features aligned with Indian cryptocurrency taxation
+- **Regulatory Compliance**: Built-in safeguards to ensure adherence to Indian crypto regulations
+- **UPI Integration**: Seamless fiat on/off-ramp via Unified Payments Interface
 
 ## Tech Stack
 
-- **Python**: Core programming language
-- **Gradio**: Web interface framework for creating interactive demos
-- **Google Generative AI (Gemini Pro)**: Large language model for medical assistance
-- **dotenv**: Environment variable management for secure API key handling
+- **Python**: Core application framework and trading logic
+- **Streamlit**: Interactive web-based user interface
+- **Plotly**: Advanced charting and data visualization
+- **Pandas**: Data manipulation and time-series analysis
+- **NumPy**: High-performance numerical computing
+- **Exchange APIs**: Direct integration with Binance, WazirX, CoinDCX, and other major platforms
+- **SQLite/PostgreSQL**: Trade history and portfolio data storage
+- **WebSocket**: Real-time market data streaming
 
-## Installation
+## Setup
 
 ### Prerequisites
+- Python 3.8 or higher
+- pip package manager
+- API keys from your preferred cryptocurrency exchange(s)
 
-- Python 3.7 or higher
-- A Google API key for Gemini Pro access
-
-### Setup Steps
+### Installation Steps
 
 1. **Clone the repository**:
    ```bash
@@ -40,88 +57,91 @@ Aethos is an advanced medical AI assistant powered by Google's Gemini Pro model,
    pip install -r requirements.txt
    ```
 
-3. **Set up your API key**:
-   - Create a `.env` file in the root directory
-   - Add your Google API key:
-     ```
-     GOOGLE_API_KEY=your_api_key_here
-     ```
-   - Alternatively, set the environment variable directly in your system
+3. **Configure environment variables**:
+   Create a `.env` file in the root directory:
+   ```env
+   EXCHANGE_API_KEY=your_api_key_here
+   EXCHANGE_API_SECRET=your_api_secret_here
+   DATABASE_URL=sqlite:///aethos.db
+   ```
 
 4. **Run the application**:
    ```bash
-   python app.py
+   streamlit run app.py
    ```
 
-## Usage
+5. **Access the platform**:
+   Open your browser and navigate to `http://localhost:8501`
 
-1. Launch the application using `python app.py`
-2. Open your web browser and navigate to the local URL displayed (typically `http://127.0.0.1:7860`)
-3. Start chatting with Aethos by typing your medical questions or health concerns
-4. Receive AI-powered responses based on the latest medical knowledge
-5. Continue the conversation - Aethos maintains context throughout the session
+## Usage Guide
 
-### Example Queries
+Aethos is organized into four main sections:
 
-- "What are the symptoms of the flu?"
-- "How can I improve my sleep quality?"
-- "What should I know about managing stress?"
-- "Can you explain what causes high blood pressure?"
+### 1. Dashboard
+Your central hub for monitoring portfolio performance, recent trades, and market overview.
+- View real-time P&L in INR
+- Track open positions and order status
+- Monitor key market indicators
+- Quick access to favorite trading pairs
 
-## Important Disclaimer
+### 2. Algo Trading
+Design, backtest, and deploy automated trading strategies.
+- Strategy builder with visual workflow
+- Backtesting engine with historical data
+- Paper trading mode for risk-free testing
+- Live deployment with customizable parameters
+- Risk management controls (stop-loss, take-profit, position sizing)
 
-⚠️ **Aethos is an AI assistant designed to provide general health information and should not replace professional medical advice, diagnosis, or treatment. Always consult with qualified healthcare professionals for medical concerns.**
+### 3. Trader Tools
+Advanced analysis and trading utilities.
+- Technical analysis charts with 50+ indicators
+- Market depth and order book visualization
+- Trade journal and performance analytics
+- Alert system for price movements and signals
 
-## Project Structure
+### 4. Markets
+Comprehensive market data and analysis.
+- Real-time price feeds for all major cryptocurrencies
+- Indian exchange rates (INR pairs)
+- Market sentiment indicators
+- News aggregation and analysis
+- Exchange comparison tools
 
-```
-Aethos/
-├── app.py              # Main application file
-├── requirements.txt    # Python dependencies
-├── style.css          # Custom styling
-├── LICENSE            # Apache 2.0 License
-└── README.md          # Project documentation
-```
+## Contact
 
-## Configuration
+**Developer**: Saumya Sanghvi  
+**GitHub**: [@saumyasanghvi03](https://github.com/saumyasanghvi03)  
+**Project Repository**: [Aethos - BlockVista Terminal](https://github.com/saumyasanghvi03/Aethos)
 
-The application uses the following Gemini Pro model configuration:
-- **Model**: gemini-1.5-flash
-- **Temperature**: 0.7 (balanced creativity and consistency)
-- **Top P**: 0.9 (nucleus sampling for response diversity)
-- **Top K**: 40 (limits vocabulary for focused responses)
-- **Max Output Tokens**: 2048 (comprehensive responses)
-
-## Contributing
-
-Contributions are welcome! If you'd like to improve Aethos:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+For bug reports, feature requests, or contributions, please open an issue on GitHub.
 
 ## License
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
-## Contact & Attribution
+```
+Copyright 2025 Saumya Sanghvi
 
-**Developer**: Saumya Sanghvi
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-**GitHub**: [@saumyasanghvi03](https://github.com/saumyasanghvi03)
+    http://www.apache.org/licenses/LICENSE-2.0
 
-**Repository**: [Aethos](https://github.com/saumyasanghvi03/Aethos)
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
+
+## Acknowledgments
+
+- Thanks to the Indian crypto trading community for valuable feedback and feature requests
+- Built with support from open-source libraries and the Python ecosystem
+- Special thanks to contributors who have helped improve the platform
+- Inspired by the vision of accessible, professional trading tools for all
 
 ---
 
-### Acknowledgments
-
-- Built with [Google Gemini Pro](https://deepmind.google/technologies/gemini/) for advanced AI capabilities
-- Powered by [Gradio](https://www.gradio.app/) for the interactive interface
-- Inspired by the vision of making healthcare information more accessible
-
----
-
-*Made with ❤️ for better health accessibility*
+**Disclaimer**: Cryptocurrency trading involves substantial risk of loss. Aethos is a tool to assist with trading decisions but does not provide financial advice. Always conduct your own research and trade responsibly. Ensure compliance with all applicable Indian laws and regulations regarding cryptocurrency trading and taxation.
