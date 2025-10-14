@@ -12,6 +12,14 @@ import json
 import warnings
 warnings.filterwarnings('ignore')
 
+# Try to import TA-Lib, fallback to manual calculations if not available
+try:
+    import talib
+    TA_LIB_AVAILABLE = True
+except ImportError:
+    TA_LIB_AVAILABLE = False
+    st.warning("TA-Lib not available. Using manual calculations for technical indicators.")
+
 # Page configuration
 st.set_page_config(
     page_title="Aethos Platform - India",
@@ -51,7 +59,7 @@ except FileNotFoundError:
     """, unsafe_allow_html=True)
 
 class DeltaExchange:
-    def __init__(self):  # Fixed: __init__ instead of _init_
+    def __init__(self):
         self.base_url = "https://api.delta.exchange"
         # Use st.secrets or environment variables
         self.api_key = st.secrets.get("DELTA_API_KEY", "") if hasattr(st, 'secrets') else ""
@@ -120,7 +128,7 @@ class DeltaExchange:
             return []
 
 class IndianExchangeData:
-    def __init__(self):  # Fixed: __init__ instead of _init_
+    def __init__(self):
         self.delta = DeltaExchange()
     
     def get_all_markets(self):
@@ -198,27 +206,30 @@ class IndianExchangeData:
         return prices
 
 class TradingStrategies:
-    """Semi-automated trading signal generators"""
+    """Semi-automated trading signal generators using TA-Lib"""
     
     @staticmethod
     def rsi_strategy(data, period=14, oversold=30, overbought=70):
-        """RSI-based trading signals"""
+        """RSI-based trading signals using TA-Lib"""
         if len(data) < period:
             return "NEUTRAL", 0
         
-        # Calculate RSI
-        delta = np.diff(data)
-        gain = np.where(delta > 0, delta, 0)
-        loss = np.where(delta < 0, -delta, 0)
-        
-        avg_gain = np.mean(gain[-period:])
-        avg_loss = np.mean(loss[-period:])
-        
-        if avg_loss == 0:
-            rsi = 100
+        if TA_LIB_AVAILABLE:
+            rsi = talib.RSI(np.array(data, dtype=float), timeperiod=period)[-1]
         else:
-            rs = avg_gain / avg_loss
-            rsi = 100 - (100 / (1 + rs))
+            # Manual RSI calculation
+            delta = np.diff(data)
+            gain = np.where(delta > 0, delta, 0)
+            loss = np.where(delta < 0, -delta, 0)
+            
+            avg_gain = np.mean(gain[-period:])
+            avg_loss = np.mean(loss[-period:])
+            
+            if avg_loss == 0:
+                rsi = 100
+            else:
+                rs = avg_gain / avg_loss
+                rsi = 100 - (100 / (1 + rs))
         
         if rsi < oversold:
             return "BUY", rsi
@@ -229,12 +240,16 @@ class TradingStrategies:
     
     @staticmethod
     def moving_average_crossover(data, short_window=20, long_window=50):
-        """Moving average crossover strategy"""
+        """Moving average crossover strategy using TA-Lib"""
         if len(data) < long_window:
             return "NEUTRAL", 0, 0
         
-        short_ma = np.mean(data[-short_window:])
-        long_ma = np.mean(data[-long_window:])
+        if TA_LIB_AVAILABLE:
+            short_ma = talib.SMA(np.array(data, dtype=float), timeperiod=short_window)[-1]
+            long_ma = talib.SMA(np.array(data, dtype=float), timeperiod=long_window)[-1]
+        else:
+            short_ma = np.mean(data[-short_window:])
+            long_ma = np.mean(data[-long_window:])
         
         if short_ma > long_ma:
             return "BUY", short_ma, long_ma
@@ -243,15 +258,25 @@ class TradingStrategies:
     
     @staticmethod
     def bollinger_bands(data, window=20, num_std=2):
-        """Bollinger Bands strategy"""
+        """Bollinger Bands strategy using TA-Lib"""
         if len(data) < window:
             return "NEUTRAL", 0, 0, 0
         
-        rolling_mean = np.mean(data[-window:])
-        rolling_std = np.std(data[-window:])
-        
-        upper_band = rolling_mean + (rolling_std * num_std)
-        lower_band = rolling_mean - (rolling_std * num_std)
+        if TA_LIB_AVAILABLE:
+            upper, middle, lower = talib.BBANDS(
+                np.array(data, dtype=float), 
+                timeperiod=window, 
+                nbdevup=num_std, 
+                nbdevdn=num_std
+            )
+            upper_band = upper[-1]
+            lower_band = lower[-1]
+            rolling_mean = middle[-1]
+        else:
+            rolling_mean = np.mean(data[-window:])
+            rolling_std = np.std(data[-window:])
+            upper_band = rolling_mean + (rolling_std * num_std)
+            lower_band = rolling_mean - (rolling_std * num_std)
         
         current_price = data[-1]
         
@@ -264,22 +289,65 @@ class TradingStrategies:
     
     @staticmethod
     def macd_strategy(data, fast=12, slow=26, signal=9):
-        """MACD strategy"""
+        """MACD strategy using TA-Lib"""
         if len(data) < slow:
             return "NEUTRAL", 0, 0, 0
         
-        # Calculate EMAs
-        ema_fast = np.mean(data[-fast:])
-        ema_slow = np.mean(data[-slow:])
-        macd = ema_fast - ema_slow
-        
-        # Calculate signal line (EMA of MACD)
-        signal_line = np.mean([macd] * min(signal, len(data)))
-        
-        if macd > signal_line:
-            return "BUY", macd, signal_line, macd - signal_line
+        if TA_LIB_AVAILABLE:
+            macd, macd_signal, macd_hist = talib.MACD(
+                np.array(data, dtype=float), 
+                fastperiod=fast, 
+                slowperiod=slow, 
+                signalperiod=signal
+            )
+            macd_val = macd[-1]
+            signal_line = macd_signal[-1]
+            histogram = macd_hist[-1]
         else:
-            return "SELL", macd, signal_line, macd - signal_line
+            # Manual EMA calculation
+            ema_fast = np.mean(data[-fast:])
+            ema_slow = np.mean(data[-slow:])
+            macd_val = ema_fast - ema_slow
+            signal_line = np.mean([macd_val] * min(signal, len(data)))
+            histogram = macd_val - signal_line
+        
+        if macd_val > signal_line:
+            return "BUY", macd_val, signal_line, histogram
+        else:
+            return "SELL", macd_val, signal_line, histogram
+    
+    @staticmethod
+    def stochastic_strategy(data, high_data, low_data, k_period=14, d_period=3):
+        """Stochastic oscillator strategy using TA-Lib"""
+        if len(data) < k_period:
+            return "NEUTRAL", 0, 0
+        
+        if TA_LIB_AVAILABLE:
+            slowk, slowd = talib.STOCH(
+                np.array(high_data, dtype=float),
+                np.array(low_data, dtype=float),
+                np.array(data, dtype=float),
+                fastk_period=k_period,
+                slowk_period=d_period,
+                slowk_matype=0,
+                slowd_period=d_period,
+                slowd_matype=0
+            )
+            k_value = slowk[-1]
+            d_value = slowd[-1]
+        else:
+            # Simplified manual calculation
+            recent_high = max(high_data[-k_period:])
+            recent_low = min(low_data[-k_period:])
+            k_value = 100 * (data[-1] - recent_low) / (recent_high - recent_low) if recent_high != recent_low else 50
+            d_value = np.mean([k_value] * min(d_period, len(data)))
+        
+        if k_value < 20 and d_value < 20:
+            return "BUY", k_value, d_value
+        elif k_value > 80 and d_value > 80:
+            return "SELL", k_value, d_value
+        else:
+            return "NEUTRAL", k_value, d_value
     
     @staticmethod
     def support_resistance_strategy(data, lookback=50):
@@ -306,7 +374,7 @@ class TradingStrategies:
 class SemiAutomatedBots:
     """Semi-automated bots that generate trading signals"""
     
-    def __init__(self):  # Fixed: __init__ instead of _init_
+    def __init__(self):
         self.strategies = TradingStrategies()
         self.exchange_data = IndianExchangeData()
     
@@ -320,7 +388,8 @@ class SemiAutomatedBots:
             # Strategy selection
             selected_strategy = st.selectbox(
                 "Select Trading Strategy",
-                ["RSI Strategy", "Moving Average Crossover", "Bollinger Bands", "MACD Strategy", "Support/Resistance", "Multi-Strategy"]
+                ["RSI Strategy", "Moving Average Crossover", "Bollinger Bands", 
+                 "MACD Strategy", "Stochastic Oscillator", "Support/Resistance", "Multi-Strategy"]
             )
             
             # Asset selection
@@ -348,6 +417,10 @@ class SemiAutomatedBots:
                 slow_period = st.slider("Slow EMA", 20, 40, 26)
                 signal_period = st.slider("Signal Period", 5, 15, 9)
             
+            elif selected_strategy == "Stochastic Oscillator":
+                k_period = st.slider("K Period", 5, 20, 14)
+                d_period = st.slider("D Period", 2, 5, 3)
+            
             elif selected_strategy == "Support/Resistance":
                 lookback = st.slider("Lookback Period", 20, 200, 50)
         
@@ -366,6 +439,8 @@ class SemiAutomatedBots:
                     locals().get('fast_period', 12),
                     locals().get('slow_period', 26),
                     locals().get('signal_period', 9),
+                    locals().get('k_period', 14),
+                    locals().get('d_period', 3),
                     locals().get('lookback', 50)
                 )
             
@@ -379,21 +454,32 @@ class SemiAutomatedBots:
     
     def generate_and_display_signals(self, strategy, symbol, *params):
         """Generate and display trading signals"""
-        # Generate sample price data
+        # Generate sample price data (OHLC)
         np.random.seed(42)
-        price_data = 100 + np.cumsum(np.random.randn(100) * 2)
+        n_points = 200
+        base_price = 100
+        
+        # Generate realistic price data with trends and volatility
+        returns = np.random.normal(0.001, 0.02, n_points)
+        prices = base_price * np.cumprod(1 + returns)
+        
+        # Generate OHLC data
+        high_prices = prices * (1 + np.abs(np.random.normal(0, 0.01, n_points)))
+        low_prices = prices * (1 - np.abs(np.random.normal(0, 0.01, n_points)))
+        open_prices = prices * (1 + np.random.normal(0, 0.005, n_points))
+        close_prices = prices
         
         signals = []
         confidence_scores = []
         
         if strategy == "RSI Strategy":
-            signal, rsi = self.strategies.rsi_strategy(price_data, *params[:3])
+            signal, rsi = self.strategies.rsi_strategy(close_prices, *params[:3])
             signals.append(signal)
             confidence_scores.append(min(abs(rsi - 50) / 50, 1.0))
             st.metric("RSI Value", f"{rsi:.2f}")
         
         elif strategy == "Moving Average Crossover":
-            signal, short_ma, long_ma = self.strategies.moving_average_crossover(price_data, *params[3:5])
+            signal, short_ma, long_ma = self.strategies.moving_average_crossover(close_prices, *params[3:5])
             signals.append(signal)
             spread = abs(short_ma - long_ma) / long_ma
             confidence_scores.append(min(spread * 10, 1.0))
@@ -401,7 +487,7 @@ class SemiAutomatedBots:
             st.metric("Long MA", f"{long_ma:.2f}")
         
         elif strategy == "Bollinger Bands":
-            signal, price, upper, lower = self.strategies.bollinger_bands(price_data, *params[5:7])
+            signal, price, upper, lower = self.strategies.bollinger_bands(close_prices, *params[5:7])
             signals.append(signal)
             bandwidth = (upper - lower) / price
             confidence_scores.append(min(bandwidth * 5, 1.0))
@@ -410,15 +496,24 @@ class SemiAutomatedBots:
             st.metric("Lower Band", f"{lower:.2f}")
         
         elif strategy == "MACD Strategy":
-            signal, macd, signal_line, histogram = self.strategies.macd_strategy(price_data, *params[7:10])
+            signal, macd, signal_line, histogram = self.strategies.macd_strategy(close_prices, *params[7:10])
             signals.append(signal)
             confidence_scores.append(min(abs(histogram) * 10, 1.0))
             st.metric("MACD", f"{macd:.4f}")
             st.metric("Signal Line", f"{signal_line:.4f}")
             st.metric("Histogram", f"{histogram:.4f}")
         
+        elif strategy == "Stochastic Oscillator":
+            signal, k_value, d_value = self.strategies.stochastic_strategy(
+                close_prices, high_prices, low_prices, *params[10:12]
+            )
+            signals.append(signal)
+            confidence_scores.append(min(max(abs(k_value - 50), abs(d_value - 50)) / 50, 1.0))
+            st.metric("K Value", f"{k_value:.2f}")
+            st.metric("D Value", f"{d_value:.2f}")
+        
         elif strategy == "Support/Resistance":
-            signal, price, support, resistance = self.strategies.support_resistance_strategy(price_data, *params[10:11])
+            signal, price, support, resistance = self.strategies.support_resistance_strategy(close_prices, *params[12:13])
             signals.append(signal)
             # Confidence based on proximity to levels
             if "BUY" in signal:
@@ -434,14 +529,15 @@ class SemiAutomatedBots:
         
         elif strategy == "Multi-Strategy":
             # Combine all strategies
-            rsi_signal, rsi_val = self.strategies.rsi_strategy(price_data, 14, 30, 70)
-            ma_signal, _, _ = self.strategies.moving_average_crossover(price_data, 10, 50)
-            bb_signal, _, _, _ = self.strategies.bollinger_bands(price_data, 20, 2)
-            macd_signal, _, _, _ = self.strategies.macd_strategy(price_data, 12, 26, 9)
-            sr_signal, _, _, _ = self.strategies.support_resistance_strategy(price_data, 50)
+            rsi_signal, rsi_val = self.strategies.rsi_strategy(close_prices, 14, 30, 70)
+            ma_signal, _, _ = self.strategies.moving_average_crossover(close_prices, 10, 50)
+            bb_signal, _, _, _ = self.strategies.bollinger_bands(close_prices, 20, 2)
+            macd_signal, _, _, _ = self.strategies.macd_strategy(close_prices, 12, 26, 9)
+            stoch_signal, _, _ = self.strategies.stochastic_strategy(close_prices, high_prices, low_prices, 14, 3)
+            sr_signal, _, _, _ = self.strategies.support_resistance_strategy(close_prices, 50)
             
-            signals = [rsi_signal, ma_signal, bb_signal, macd_signal, sr_signal]
-            confidence_scores = [0.7, 0.8, 0.6, 0.75, 0.65]
+            signals = [rsi_signal, ma_signal, bb_signal, macd_signal, stoch_signal, sr_signal]
+            confidence_scores = [0.7, 0.8, 0.6, 0.75, 0.65, 0.7]
         
         # Determine final signal
         buy_signals = signals.count("BUY")
@@ -477,10 +573,14 @@ class SemiAutomatedBots:
         for i, (sig, conf) in enumerate(zip(signals, confidence_scores)):
             st.write(f"- Strategy {i+1}: {sig} ({conf:.1%} confidence)")
 
+# Rest of the classes remain the same as in your original code...
+# [The remaining classes (AutomatedTradingBot, IndianTraderTools, AethosIndiaPlatform) 
+#  would be included here without changes to their structure]
+
 class AutomatedTradingBot:
     """Fully automated trading bot with paper and live trading"""
     
-    def __init__(self):  # Fixed: __init__ instead of _init_
+    def __init__(self):
         self.exchange_data = IndianExchangeData()
         self.paper_balance = 100000  # Starting paper balance in INR
         self.positions = {}
@@ -823,7 +923,7 @@ class AutomatedTradingBot:
         st.dataframe(pd.DataFrame(strategies_data), use_container_width=True)
 
 class IndianTraderTools:
-    def __init__(self):  # Fixed: __init__ instead of _init_
+    def __init__(self):
         self.exchange_data = IndianExchangeData()
     
     def create_tax_calculator(self):
@@ -994,7 +1094,7 @@ class IndianTraderTools:
                 st.write("Indian regulators continue to develop comprehensive framework for digital assets. Stay updated with latest compliance requirements.")
 
 class AethosIndiaPlatform:
-    def __init__(self):  # Fixed: __init__ instead of _init_
+    def __init__(self):
         self.exchange_data = IndianExchangeData()
         self.semi_bots = SemiAutomatedBots()
         self.auto_bots = AutomatedTradingBot()
@@ -1213,6 +1313,7 @@ class AethosIndiaPlatform:
             self.create_markets_overview()
 
 # Run the application
-if __name__ == "__main__":  # Fixed: __name__ instead of _name_
+if __name__ == "__main__":
+    
     platform = AethosIndiaPlatform()
     platform.run()
