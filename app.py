@@ -12,13 +12,18 @@ import json
 import warnings
 warnings.filterwarnings('ignore')
 
-# Try to import TA-Lib, fallback to manual calculations if not available
+# Try to import TA-Lib and yfinance
 try:
     import talib
     TA_LIB_AVAILABLE = True
 except ImportError:
     TA_LIB_AVAILABLE = False
-    st.warning("TA-Lib not available. Using manual calculations for technical indicators.")
+
+try:
+    import yfinance as yf
+    YFINANCE_AVAILABLE = True
+except ImportError:
+    YFINANCE_AVAILABLE = False
 
 # Page configuration
 st.set_page_config(
@@ -43,26 +48,6 @@ st.markdown("""
     opacity: 0.9;
     margin-top: 0.5rem;
 }
-.regulatory-alert {
-    background-color: #fff3cd;
-    border: 1px solid #ffeaa7;
-    border-radius: 5px;
-    padding: 1rem;
-    margin: 1rem 0;
-}
-.exchange-button {
-    padding: 0.5rem 1rem;
-    margin: 0.2rem;
-    border-radius: 5px;
-    border: 1px solid #ddd;
-    background: white;
-    cursor: pointer;
-}
-.exchange-button.active {
-    background: #667eea;
-    color: white;
-    border-color: #667eea;
-}
 .token-card {
     background: white;
     border-radius: 10px;
@@ -81,6 +66,9 @@ st.markdown("""
 .positive { color: #00d4aa; }
 .negative { color: #ff4b4b; }
 .neutral { color: #ffa500; }
+.pattern-bullish { background-color: #d4f8e8; padding: 5px; border-radius: 3px; }
+.pattern-bearish { background-color: #f8d4d4; padding: 5px; border-radius: 3px; }
+.pattern-neutral { background-color: #f0f0f0; padding: 5px; border-radius: 3px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -94,7 +82,6 @@ class CoinMarketCapAPI:
     def make_request(self, endpoint, params=None):
         """Make authenticated request to CMC API"""
         if not self.api_key:
-            st.error("❌ CoinMarketCap API key not found. Please add COIN_MARKET_CAP_API_KEY to Streamlit secrets.")
             return None
             
         headers = {
@@ -109,10 +96,8 @@ class CoinMarketCapAPI:
             if response.status_code == 200:
                 return response.json()
             else:
-                st.error(f"❌ CMC API Error: {response.status_code} - {response.text}")
                 return None
-        except Exception as e:
-            st.error(f"❌ Error fetching CMC data: {e}")
+        except Exception:
             return None
     
     def get_crypto_listings(self, limit=100, convert='USD'):
@@ -139,117 +124,345 @@ class CoinMarketCapAPI:
             'symbol': symbol.upper()
         }
         return self.make_request('cryptocurrency/info', params)
+
+class YFinanceFallback:
+    """Fallback to yfinance when CMC is unavailable"""
     
-    def get_global_metrics(self):
-        """Get global cryptocurrency metrics"""
-        params = {
-            'convert': 'INR,USD'
-        }
-        return self.make_request('global-metrics/quotes/latest', params)
+    @staticmethod
+    def get_crypto_data(symbol):
+        """Get cryptocurrency data using yfinance"""
+        if not YFINANCE_AVAILABLE:
+            return None
+            
+        try:
+            # Map symbols to yfinance format
+            symbol_map = {
+                'BTC': 'BTC-USD',
+                'ETH': 'ETH-USD', 
+                'USDT': 'USDT-USD',
+                'BNB': 'BNB-USD',
+                'SOL': 'SOL-USD',
+                'XRP': 'XRP-USD',
+                'ADA': 'ADA-USD',
+                'AVAX': 'AVAX-USD',
+                'DOT': 'DOT-USD',
+                'MATIC': 'MATIC-USD',
+                'LINK': 'LINK-USD',
+                'LTC': 'LTC-USD',
+                'BCH': 'BCH-USD',
+                'XLM': 'XLM-USD',
+                'ATOM': 'ATOM-USD'
+            }
+            
+            yf_symbol = symbol_map.get(symbol.upper(), f"{symbol.upper()}-USD")
+            ticker = yf.Ticker(yf_symbol)
+            info = ticker.info
+            history = ticker.history(period="1mo")
+            
+            if history.empty:
+                return None
+                
+            current_price = history['Close'].iloc[-1]
+            prev_price = history['Close'].iloc[-2] if len(history) > 1 else current_price
+            change_24h = ((current_price - prev_price) / prev_price) * 100
+            
+            return {
+                'name': info.get('name', symbol),
+                'symbol': symbol,
+                'price_usd': current_price,
+                'price_inr': current_price * 83,  # Approximate conversion
+                'market_cap': info.get('marketCap', 0),
+                'volume_24h': info.get('volume24Hr', 0),
+                'change_24h': change_24h,
+                'description': info.get('description', 'No description available'),
+                'currency': info.get('currency', 'USD')
+            }
+        except Exception:
+            return None
 
 class DeltaExchange:
+    """Delta Exchange API integration for real market data"""
+    
     def __init__(self):
         self.base_url = "https://api.delta.exchange"
-        self.api_key = st.secrets.get("DELTA_API_KEY", "") if hasattr(st, 'secrets') else ""
-        self.api_secret = st.secrets.get("DELTA_API_SECRET", "") if hasattr(st, 'secrets') else ""
+        self.api_key = st.secrets.get("DELTA_API_KEY", "")
+        self.api_secret = st.secrets.get("DELTA_API_SECRET", "")
     
-    def get_products(self):
-        """Get available trading products"""
+    def get_products(self, limit=50):
+        """Get available trading products from Delta"""
         try:
             response = requests.get(f"{self.base_url}/v2/products", timeout=10)
             if response.status_code == 200:
-                return response.json().get('result', [])
+                products = response.json().get('result', [])
+                # Filter for popular trading pairs and Indian relevant tokens
+                popular_symbols = ['BTC', 'ETH', 'SOL', 'MATIC', 'ADA', 'DOT', 'BNB', 'XRP', 'LINK', 'LTC']
+                filtered_products = []
+                
+                for product in products:
+                    symbol = product.get('symbol', '')
+                    # Include major cryptocurrencies and INR pairs
+                    if any(token in symbol for token in popular_symbols) or 'INR' in symbol:
+                        filtered_products.append(product)
+                
+                return filtered_products[:limit]
             return []
         except Exception as e:
             st.error(f"Error fetching Delta products: {e}")
             return []
     
     def get_ticker(self, symbol):
-        """Get ticker data for a symbol"""
+        """Get real ticker data from Delta"""
         try:
             response = requests.get(f"{self.base_url}/v2/tickers/{symbol}", timeout=10)
             if response.status_code == 200:
                 return response.json().get('result')
             return None
         except Exception as e:
-            st.error(f"Error fetching Delta ticker: {e}")
+            return None
+    
+    def get_ohlc(self, symbol, resolution=60, limit=100):
+        """Get OHLC data from Delta"""
+        try:
+            response = requests.get(
+                f"{self.base_url}/v2/history/candles",
+                params={
+                    'symbol': symbol,
+                    'resolution': resolution,
+                    'limit': limit
+                },
+                timeout=10
+            )
+            if response.status_code == 200:
+                return response.json().get('result', [])
+            return []
+        except Exception:
+            return []
+    
+    def get_orderbook(self, symbol):
+        """Get order book data"""
+        try:
+            response = requests.get(f"{self.base_url}/v2/orderbook/{symbol}", timeout=10)
+            if response.status_code == 200:
+                return response.json().get('result')
+            return None
+        except Exception:
             return None
 
-class IndianExchanges:
-    """Indian exchange data for CoinDCX, Coinswitch, Mudrex, and ZebPay"""
+class PatternDiscovery:
+    """Automated pattern discovery using technical analysis"""
+    
     def __init__(self):
-        self.exchanges = {
-            'CoinDCX': {
-                'pairs': ['BTCINR', 'ETHINR', 'USDTINR', 'MATICINR', 'ADAINR', 'DOTINR', 'SOLINR', 'XRPINR', 'BNBINR']
-            },
-            'Coinswitch': {
-                'pairs': ['BTC-INR', 'ETH-INR', 'USDT-INR', 'MATIC-INR', 'ADA-INR', 'DOT-INR']
-            },
-            'Mudrex': {
-                'pairs': ['BTC-INR', 'ETH-INR', 'USDT-INR', 'MATIC-INR', 'SOL-INR', 'ADA-INR']
-            },
-            'ZebPay': {
-                'pairs': ['BTC-INR', 'ETH-INR', 'USDT-INR', 'MATIC-INR', 'ADA-INR', 'SOL-INR']
-            }
+        self.patterns = {
+            'bullish': [],
+            'bearish': [],
+            'neutral': []
         }
     
-    def get_ticker(self, exchange, symbol):
-        """Get ticker data from Indian exchange (simulated)"""
-        # Base prices for simulation
-        base_prices = {
-            'BTCINR': 3500000,
-            'ETHINR': 200000,
-            'USDTINR': 83,
-            'MATICINR': 60,
-            'ADAINR': 40,
-            'DOTINR': 500,
-            'SOLINR': 8000,
-            'XRPINR': 50,
-            'BNBINR': 25000
+    def discover_patterns(self, ohlc_data):
+        """Discover technical patterns from OHLC data"""
+        if not ohlc_data or len(ohlc_data) < 50:
+            return self.patterns
+            
+        # Convert to numpy arrays for TA-Lib
+        opens = np.array([float(candle['open']) for candle in ohlc_data])
+        highs = np.array([float(candle['high']) for candle in ohlc_data])
+        lows = np.array([float(candle['low']) for candle in ohlc_data])
+        closes = np.array([float(candle['close']) for candle in ohlc_data])
+        
+        if TA_LIB_AVAILABLE:
+            self._discover_talib_patterns(opens, highs, lows, closes)
+        else:
+            self._discover_basic_patterns(opens, highs, lows, closes)
+            
+        return self.patterns
+    
+    def _discover_talib_patterns(self, opens, highs, lows, closes):
+        """Discover patterns using TA-Lib"""
+        try:
+            # Candlestick patterns
+            patterns = {
+                'CDL2CROWS': talib.CDL2CROWS(opens, highs, lows, closes),
+                'CDL3BLACKCROWS': talib.CDL3BLACKCROWS(opens, highs, lows, closes),
+                'CDL3INSIDE': talib.CDL3INSIDE(opens, highs, lows, closes),
+                'CDL3LINESTRIKE': talib.CDL3LINESTRIKE(opens, highs, lows, closes),
+                'CDL3OUTSIDE': talib.CDL3OUTSIDE(opens, highs, lows, closes),
+                'CDL3STARSINSOUTH': talib.CDL3STARSINSOUTH(opens, highs, lows, closes),
+                'CDL3WHITESOLDIERS': talib.CDL3WHITESOLDIERS(opens, highs, lows, closes),
+                'CDLABANDONEDBABY': talib.CDLABANDONEDBABY(opens, highs, lows, closes, penetration=0),
+                'CDLADVANCEBLOCK': talib.CDLADVANCEBLOCK(opens, highs, lows, closes),
+                'CDLBELTHOLD': talib.CDLBELTHOLD(opens, highs, lows, closes),
+                'CDLBREAKAWAY': talib.CDLBREAKAWAY(opens, highs, lows, closes),
+                'CDLCLOSINGMARUBOZU': talib.CDLCLOSINGMARUBOZU(opens, highs, lows, closes),
+                'CDLDARKCLOUDCOVER': talib.CDLDARKCLOUDCOVER(opens, highs, lows, closes, penetration=0),
+                'CDLDOJI': talib.CDLDOJI(opens, highs, lows, closes),
+                'CDLDOJISTAR': talib.CDLDOJISTAR(opens, highs, lows, closes),
+                'CDLDRAGONFLYDOJI': talib.CDLDRAGONFLYDOJI(opens, highs, lows, closes),
+                'CDLENGULFING': talib.CDLENGULFING(opens, highs, lows, closes),
+                'CDLEVENINGDOJISTAR': talib.CDLEVENINGDOJISTAR(opens, highs, lows, closes, penetration=0),
+                'CDLEVENINGSTAR': talib.CDLEVENINGSTAR(opens, highs, lows, closes, penetration=0),
+                'CDLGRAVESTONEDOJI': talib.CDLGRAVESTONEDOJI(opens, highs, lows, closes),
+                'CDLHAMMER': talib.CDLHAMMER(opens, highs, lows, closes),
+                'CDLHANGINGMAN': talib.CDLHANGINGMAN(opens, highs, lows, closes),
+                'CDLHARAMI': talib.CDLHARAMI(opens, highs, lows, closes),
+                'CDLHARAMICROSS': talib.CDLHARAMICROSS(opens, highs, lows, closes),
+                'CDLHIGHWAVE': talib.CDLHIGHWAVE(opens, highs, lows, closes),
+                'CDLINNECK': talib.CDLINNECK(opens, highs, lows, closes),
+                'CDLINVERTEDHAMMER': talib.CDLINVERTEDHAMMER(opens, highs, lows, closes),
+                'CDLKICKING': talib.CDLKICKING(opens, highs, lows, closes),
+                'CDLLADDERBOTTOM': talib.CDLLADDERBOTTOM(opens, highs, lows, closes),
+                'CDLLONGLEGGEDDOJI': talib.CDLLONGLEGGEDDOJI(opens, highs, lows, closes),
+                'CDLLONGLINE': talib.CDLLONGLINE(opens, highs, lows, closes),
+                'CDLMARUBOZU': talib.CDLMARUBOZU(opens, highs, lows, closes),
+                'CDLMATCHINGLOW': talib.CDLMATCHINGLOW(opens, highs, lows, closes),
+                'CDLMATHOLD': talib.CDLMATHOLD(opens, highs, lows, closes, penetration=0),
+                'CDLMORNINGDOJISTAR': talib.CDLMORNINGDOJISTAR(opens, highs, lows, closes, penetration=0),
+                'CDLMORNINGSTAR': talib.CDLMORNINGSTAR(opens, highs, lows, closes, penetration=0),
+                'CDLPIERCING': talib.CDLPIERCING(opens, highs, lows, closes),
+                'CDLRICKSHAWMAN': talib.CDLRICKSHAWMAN(opens, highs, lows, closes),
+                'CDLRISEFALL3METHODS': talib.CDLRISEFALL3METHODS(opens, highs, lows, closes),
+                'CDLSEPARATINGLINES': talib.CDLSEPARATINGLINES(opens, highs, lows, closes),
+                'CDLSHOOTINGSTAR': talib.CDLSHOOTINGSTAR(opens, highs, lows, closes),
+                'CDLSHORTLINE': talib.CDLSHORTLINE(opens, highs, lows, closes),
+                'CDLSPINNINGTOP': talib.CDLSPINNINGTOP(opens, highs, lows, closes),
+                'CDLSTALLEDPATTERN': talib.CDLSTALLEDPATTERN(opens, highs, lows, closes),
+                'CDLTAKURI': talib.CDLTAKURI(opens, highs, lows, closes),
+                'CDLTASUKIGAP': talib.CDLTASUKIGAP(opens, highs, lows, closes),
+                'CDLTHRUSTING': talib.CDLTHRUSTING(opens, highs, lows, closes),
+                'CDLTRISTAR': talib.CDLTRISTAR(opens, highs, lows, closes),
+                'CDLUNIQUE3RIVER': talib.CDLUNIQUE3RIVER(opens, highs, lows, closes),
+                'CDLUPSIDEGAP2CROWS': talib.CDLUPSIDEGAP2CROWS(opens, highs, lows, closes),
+                'CDLXSIDEGAP3METHODS': talib.CDLXSIDEGAP3METHODS(opens, highs, lows, closes)
+            }
+            
+            # Check recent patterns (last 5 candles)
+            for pattern_name, pattern_data in patterns.items():
+                recent_patterns = pattern_data[-5:]  # Last 5 periods
+                for i, value in enumerate(recent_patterns):
+                    if value != 0:
+                        pattern_info = {
+                            'name': pattern_name,
+                            'strength': abs(value),
+                            'direction': 'bullish' if value > 0 else 'bearish',
+                            'period': len(recent_patterns) - i  # How recent (1 = most recent)
+                        }
+                        
+                        if value > 0:
+                            self.patterns['bullish'].append(pattern_info)
+                        elif value < 0:
+                            self.patterns['bearish'].append(pattern_info)
+                            
+        except Exception as e:
+            st.error(f"Error in TA-Lib pattern discovery: {e}")
+    
+    def _discover_basic_patterns(self, opens, highs, lows, closes):
+        """Discover basic patterns without TA-Lib"""
+        try:
+            # Simple pattern detection
+            if len(closes) >= 3:
+                # Bullish Engulfing
+                if (closes[-2] < opens[-2] and  # Previous candle bearish
+                    closes[-1] > opens[-1] and  # Current candle bullish
+                    closes[-1] > opens[-2] and  # Close above previous open
+                    opens[-1] < closes[-2]):    # Open below previous close
+                    self.patterns['bullish'].append({
+                        'name': 'Bullish Engulfing',
+                        'strength': 100,
+                        'direction': 'bullish',
+                        'period': 1
+                    })
+                
+                # Bearish Engulfing
+                if (closes[-2] > opens[-2] and  # Previous candle bullish
+                    closes[-1] < opens[-1] and  # Current candle bearish
+                    closes[-1] < opens[-2] and  # Close below previous open
+                    opens[-1] > closes[-2]):    # Open above previous close
+                    self.patterns['bearish'].append({
+                        'name': 'Bearish Engulfing',
+                        'strength': 100,
+                        'direction': 'bearish',
+                        'period': 1
+                    })
+                
+                # Doji detection
+                body_size = abs(closes[-1] - opens[-1])
+                total_range = highs[-1] - lows[-1]
+                if total_range > 0 and body_size / total_range < 0.1:  # Small body relative to range
+                    self.patterns['neutral'].append({
+                        'name': 'Doji',
+                        'strength': 80,
+                        'direction': 'neutral',
+                        'period': 1
+                    })
+                    
+        except Exception as e:
+            st.error(f"Error in basic pattern discovery: {e}")
+    
+    def get_pattern_summary(self):
+        """Get summary of discovered patterns"""
+        summary = {
+            'total_bullish': len(self.patterns['bullish']),
+            'total_bearish': len(self.patterns['bearish']),
+            'total_neutral': len(self.patterns['neutral']),
+            'dominant_sentiment': 'neutral'
         }
         
-        # Clean symbol for lookup
-        symbol_upper = symbol.upper().replace('-', '').replace('_', '')
-        base_price = base_prices.get(symbol_upper, 100)
-        
-        # Exchange-specific variations
-        exchange_factors = {
-            'CoinDCX': 1.0, 
-            'Coinswitch': 0.998, 
-            'Mudrex': 1.001,
-            'ZebPay': 1.002
-        }
-        
-        variation = np.random.uniform(-0.02, 0.02)
-        price = base_price * exchange_factors.get(exchange, 1.0) * (1 + variation)
-        
-        return {
-            'symbol': symbol,
-            'price': price,
-            'volume': np.random.uniform(100000, 500000),
-            'change_24h': np.random.uniform(-5, 5),
-            'high_24h': price * (1 + abs(np.random.uniform(0, 0.1))),
-            'low_24h': price * (1 - abs(np.random.uniform(0, 0.1))),
-            'exchange': exchange
-        }
+        if summary['total_bullish'] > summary['total_bearish']:
+            summary['dominant_sentiment'] = 'bullish'
+        elif summary['total_bearish'] > summary['total_bullish']:
+            summary['dominant_sentiment'] = 'bearish'
+            
+        return summary
 
 class MarketDataProvider:
     def __init__(self):
         self.delta = DeltaExchange()
-        self.indian = IndianExchanges()
         self.cmc = CoinMarketCapAPI()
+        self.yfinance = YFinanceFallback()
+        self.pattern_discovery = PatternDiscovery()
         self.available_exchanges = ['Delta', 'CoinDCX', 'Coinswitch', 'Mudrex', 'ZebPay']
+    
+    def get_top_tokens_by_market_cap(self, limit=15):
+        """Get top tokens by market cap from CMC or fallback"""
+        # Try CMC first
+        cmc_data = self.cmc.get_crypto_listings(limit=limit)
+        if cmc_data and 'data' in cmc_data:
+            tokens = []
+            for crypto in cmc_data['data']:
+                tokens.append({
+                    'symbol': crypto['symbol'],
+                    'name': crypto['name'],
+                    'market_cap': crypto['quote']['USD']['market_cap'],
+                    'price': crypto['quote']['USD']['price'],
+                    'change_24h': crypto['quote']['USD']['percent_change_24h']
+                })
+            return tokens
+        
+        # Fallback to hardcoded top tokens
+        top_tokens = [
+            {'symbol': 'BTC', 'name': 'Bitcoin', 'market_cap': 1300000000000, 'price': 67000, 'change_24h': 2.1},
+            {'symbol': 'ETH', 'name': 'Ethereum', 'market_cap': 450000000000, 'price': 3500, 'change_24h': 1.5},
+            {'symbol': 'USDT', 'name': 'Tether', 'market_cap': 110000000000, 'price': 1.0, 'change_24h': 0.0},
+            {'symbol': 'BNB', 'name': 'Binance Coin', 'market_cap': 85000000000, 'price': 580, 'change_24h': 3.2},
+            {'symbol': 'SOL', 'name': 'Solana', 'market_cap': 82000000000, 'price': 180, 'change_24h': 5.7},
+            {'symbol': 'XRP', 'name': 'Ripple', 'market_cap': 36000000000, 'price': 0.62, 'change_24h': -1.2},
+            {'symbol': 'ADA', 'name': 'Cardano', 'market_cap': 24000000000, 'price': 0.45, 'change_24h': 2.8},
+            {'symbol': 'AVAX', 'name': 'Avalanche', 'market_cap': 14000000000, 'price': 35, 'change_24h': 4.1},
+            {'symbol': 'DOT', 'name': 'Polkadot', 'market_cap': 12000000000, 'price': 8.5, 'change_24h': 1.9},
+            {'symbol': 'MATIC', 'name': 'Polygon', 'market_cap': 10000000000, 'price': 0.75, 'change_24h': 3.5}
+        ]
+        return top_tokens[:limit]
     
     def get_exchange_symbols(self, exchange):
         """Get available symbols for an exchange"""
         if exchange == 'Delta':
             products = self.delta.get_products()
-            return [p['symbol'] for p in products[:20] if p]
+            return [p['symbol'] for p in products if p]
         else:
-            return self.indian.exchanges[exchange]['pairs']
+            # For other exchanges, return popular pairs
+            return ['BTC-INR', 'ETH-INR', 'USDT-INR', 'SOL-INR', 'MATIC-INR', 'ADA-INR', 'DOT-INR']
     
-    def get_token_data(self, exchange, symbol):
-        """Get comprehensive token data"""
+    def get_real_time_data(self, symbol, exchange):
+        """Get real-time data from Delta Exchange"""
         if exchange == 'Delta':
             ticker = self.delta.get_ticker(symbol)
             if ticker:
@@ -260,432 +473,306 @@ class MarketDataProvider:
                     'change_24h': float(ticker.get('change_24h', 0)),
                     'high_24h': float(ticker.get('high', 0)),
                     'low_24h': float(ticker.get('low', 0)),
-                    'exchange': exchange
+                    'bid': float(ticker.get('best_bid', 0)),
+                    'ask': float(ticker.get('best_ask', 0)),
+                    'exchange': exchange,
+                    'timestamp': datetime.now()
                 }
-        else:
-            return self.indian.get_ticker(exchange, symbol)
         return None
     
     def get_technical_indicators(self, symbol, exchange):
-        """Calculate technical indicators for a symbol"""
-        np.random.seed(hash(symbol) % 1000)
-        n_points = 200
+        """Calculate technical indicators with real data"""
+        # Get OHLC data from Delta
+        ohlc_data = self.delta.get_ohlc(symbol, resolution=60, limit=100)
         
-        returns = np.random.normal(0.001, 0.02, n_points)
-        prices = 100 * np.cumprod(1 + returns)
+        if not ohlc_data:
+            return self._get_fallback_indicators(symbol)
         
-        if TA_LIB_AVAILABLE:
-            rsi = talib.RSI(prices, timeperiod=14)[-1]
-            macd, macd_signal, macd_hist = talib.MACD(prices)
-            upper, middle, lower = talib.BBANDS(prices, timeperiod=20, nbdevup=2, nbdevdn=2)
-            sma_20 = talib.SMA(prices, timeperiod=20)[-1]
-            sma_50 = talib.SMA(prices, timeperiod=50)[-1]
-            high_prices = prices * (1 + np.abs(np.random.normal(0, 0.01, n_points)))
-            low_prices = prices * (1 - np.abs(np.random.normal(0, 0.01, n_points)))
-            slowk, slowd = talib.STOCH(high_prices, low_prices, prices)
-            stoch_k = slowk[-1]
-            stoch_d = slowd[-1]
+        # Convert to arrays
+        closes = np.array([float(candle['close']) for candle in ohlc_data])
+        highs = np.array([float(candle['high']) for candle in ohlc_data])
+        lows = np.array([float(candle['low']) for candle in ohlc_data])
+        volumes = np.array([float(candle['volume']) for candle in ohlc_data])
+        
+        indicators = {}
+        
+        if TA_LIB_AVAILABLE and len(closes) >= 50:
+            try:
+                # RSI
+                indicators['RSI'] = talib.RSI(closes, timeperiod=14)[-1]
+                
+                # MACD
+                macd, macd_signal, macd_hist = talib.MACD(closes)
+                indicators['MACD'] = macd[-1]
+                indicators['MACD_Signal'] = macd_signal[-1]
+                indicators['MACD_Histogram'] = macd_hist[-1]
+                
+                # Bollinger Bands
+                upper, middle, lower = talib.BBANDS(closes, timeperiod=20, nbdevup=2, nbdevdn=2)
+                indicators['BB_Upper'] = upper[-1]
+                indicators['BB_Middle'] = middle[-1]
+                indicators['BB_Lower'] = lower[-1]
+                
+                # Moving Averages
+                indicators['SMA_20'] = talib.SMA(closes, timeperiod=20)[-1]
+                indicators['SMA_50'] = talib.SMA(closes, timeperiod=50)[-1]
+                indicators['EMA_12'] = talib.EMA(closes, timeperiod=12)[-1]
+                indicators['EMA_26'] = talib.EMA(closes, timeperiod=26)[-1]
+                
+                # Stochastic
+                slowk, slowd = talib.STOCH(highs, lows, closes)
+                indicators['Stoch_K'] = slowk[-1]
+                indicators['Stoch_D'] = slowd[-1]
+                
+                # Additional indicators
+                indicators['ATR'] = talib.ATR(highs, lows, closes, timeperiod=14)[-1]
+                indicators['ADX'] = talib.ADX(highs, lows, closes, timeperiod=14)[-1]
+                indicators['OBV'] = talib.OBV(closes, volumes)[-1]
+                
+            except Exception as e:
+                st.error(f"Error calculating TA-Lib indicators: {e}")
+                return self._get_fallback_indicators(symbol)
         else:
-            rsi = 50 + np.random.uniform(-20, 20)
-            macd_val = np.random.uniform(-2, 2)
-            macd_signal_val = np.random.uniform(-2, 2)
-            bb_upper = prices[-1] * 1.1
-            bb_lower = prices[-1] * 0.9
-            sma_20 = np.mean(prices[-20:])
-            sma_50 = np.mean(prices[-50:])
-            stoch_k = 50 + np.random.uniform(-30, 30)
-            stoch_d = 50 + np.random.uniform(-30, 30)
+            return self._get_fallback_indicators(symbol)
+        
+        indicators['Current_Price'] = closes[-1]
+        return indicators
+    
+    def _get_fallback_indicators(self, symbol):
+        """Fallback indicators when real data is unavailable"""
+        np.random.seed(hash(symbol) % 1000)
+        n_points = 100
+        prices = 100 + np.cumsum(np.random.randn(n_points) * 2)
         
         return {
-            'RSI': rsi,
-            'MACD': macd_val if TA_LIB_AVAILABLE else macd_val,
-            'MACD_Signal': macd_signal_val if TA_LIB_AVAILABLE else macd_signal_val,
-            'BB_Upper': bb_upper,
-            'BB_Lower': bb_lower,
-            'SMA_20': sma_20,
-            'SMA_50': sma_50,
-            'Stoch_K': stoch_k,
-            'Stoch_D': stoch_d,
+            'RSI': 50 + np.random.uniform(-20, 20),
+            'MACD': np.random.uniform(-2, 2),
+            'MACD_Signal': np.random.uniform(-2, 2),
+            'MACD_Histogram': np.random.uniform(-0.5, 0.5),
+            'BB_Upper': prices[-1] * 1.1,
+            'BB_Middle': prices[-1],
+            'BB_Lower': prices[-1] * 0.9,
+            'SMA_20': np.mean(prices[-20:]),
+            'SMA_50': np.mean(prices[-50:]),
+            'EMA_12': np.mean(prices[-12:]),
+            'EMA_26': np.mean(prices[-26:]),
+            'Stoch_K': 50 + np.random.uniform(-30, 30),
+            'Stoch_D': 50 + np.random.uniform(-30, 30),
+            'ATR': prices[-1] * 0.02,
+            'ADX': 20 + np.random.uniform(0, 40),
+            'OBV': np.random.uniform(100000, 500000),
             'Current_Price': prices[-1]
         }
     
-    def get_real_fundamental_data(self, symbol):
-        """Get REAL fundamental data from CoinMarketCap"""
-        # Extract base symbol for CMC lookup
-        base_symbol = self._extract_base_symbol(symbol)
-        
-        # Get quotes data
-        quotes_data = self.cmc.get_crypto_info(base_symbol)
-        if not quotes_data:
-            return self._get_fallback_data(base_symbol)
-        
-        # Get metadata
-        metadata = self.cmc.get_metadata(base_symbol)
-        
-        return self._parse_cmc_data(quotes_data, metadata, base_symbol)
+    def get_patterns(self, symbol, exchange):
+        """Discover patterns for a symbol"""
+        ohlc_data = self.delta.get_ohlc(symbol, resolution=60, limit=100)
+        return self.pattern_discovery.discover_patterns(ohlc_data)
     
-    def _extract_base_symbol(self, symbol):
-        """Extract base symbol from trading pair"""
-        # Remove exchange-specific suffixes and quote currencies
-        symbol_clean = symbol.upper().replace('-', '').replace('_', '').replace('INR', '').replace('USDT', '')
-        
-        # Common cryptocurrency symbols
-        crypto_symbols = ['BTC', 'ETH', 'USDT', 'BNB', 'SOL', 'XRP', 'ADA', 'AVAX', 
-                         'DOT', 'MATIC', 'LINK', 'LTC', 'BCH', 'XLM', 'ATOM']
-        
-        for crypto in crypto_symbols:
-            if crypto in symbol_clean:
-                return crypto
-        
-        return symbol_clean[:4] if symbol_clean else symbol
-    
-    def _parse_cmc_data(self, quotes_data, metadata, symbol):
-        """Parse CMC API response into structured data"""
-        try:
-            data = quotes_data.get('data', {})
-            if not data:
-                return self._get_fallback_data(symbol)
-            
-            # Get the first cryptocurrency in response
+    def get_fundamental_data(self, symbol):
+        """Get fundamental data with CMC and yfinance fallback"""
+        # Try CMC first
+        cmc_data = self.cmc.get_crypto_info(symbol)
+        if cmc_data and 'data' in cmc_data:
+            data = cmc_data['data']
             crypto_key = list(data.keys())[0]
             crypto_data = data[crypto_key]
             quote_data = crypto_data.get('quote', {}).get('USD', {})
-            
-            # Parse metadata if available
-            meta_info = {}
-            if metadata and 'data' in metadata:
-                meta_data = metadata['data'].get(crypto_key, {})
-                meta_info = {
-                    'description': meta_data.get('description', ''),
-                    'logo': meta_data.get('logo', ''),
-                    'urls': meta_data.get('urls', {}),
-                    'tags': meta_data.get('tags', []),
-                    'date_added': meta_data.get('date_added', ''),
-                    'category': meta_data.get('category', '')
-                }
-            
-            # Calculate additional metrics
-            market_cap = quote_data.get('market_cap', 0)
-            volume_24h = quote_data.get('volume_24h', 0)
-            circulating_supply = crypto_data.get('circulating_supply', 0)
-            total_supply = crypto_data.get('total_supply', 0)
-            max_supply = crypto_data.get('max_supply', 0)
-            
-            # Calculate volume to market cap ratio
-            volume_mcap_ratio = (volume_24h / market_cap) * 100 if market_cap > 0 else 0
-            
-            # Determine market sentiment
-            percent_change_24h = quote_data.get('percent_change_24h', 0)
-            percent_change_7d = quote_data.get('percent_change_7d', 0)
-            sentiment = self._calculate_sentiment(percent_change_24h, percent_change_7d)
-            
-            # Calculate risk level
-            risk_level = self._calculate_risk_level(
-                market_cap, 
-                volume_mcap_ratio,
-                percent_change_24h
-            )
             
             return {
                 'name': crypto_data.get('name', symbol),
                 'symbol': crypto_data.get('symbol', symbol),
                 'price_usd': quote_data.get('price', 0),
-                'price_inr': quote_data.get('price', 0) * 83,  # Approximate conversion
-                'market_cap': market_cap,
-                'market_cap_display': f"${market_cap:,.0f}" if market_cap else "N/A",
-                'volume_24h': volume_24h,
-                'volume_24h_display': f"${volume_24h:,.0f}" if volume_24h else "N/A",
-                'circulating_supply': circulating_supply,
-                'circulating_supply_display': f"{circulating_supply:,.0f}" if circulating_supply else "N/A",
-                'total_supply': total_supply,
-                'total_supply_display': f"{total_supply:,.0f}" if total_supply else "N/A",
-                'max_supply': max_supply,
-                'max_supply_display': f"{max_supply:,.0f}" if max_supply else "Unlimited",
-                'percent_change_1h': quote_data.get('percent_change_1h', 0),
-                'percent_change_24h': percent_change_24h,
-                'percent_change_7d': percent_change_7d,
-                'percent_change_30d': quote_data.get('percent_change_30d', 0),
-                'market_cap_rank': crypto_data.get('cmc_rank', 'N/A'),
-                'volume_mcap_ratio': volume_mcap_ratio,
-                'sentiment': sentiment,
-                'risk_level': risk_level,
-                'description': meta_info.get('description', 'No description available'),
-                'website': meta_info.get('urls', {}).get('website', [''])[0] if meta_info.get('urls') else '',
-                'explorer': meta_info.get('urls', {}).get('explorer', [''])[0] if meta_info.get('urls') else '',
-                'tags': meta_info.get('tags', []),
-                'category': meta_info.get('category', 'cryptocurrency'),
-                'fully_diluted_market_cap': quote_data.get('fully_diluted_market_cap', 0),
-                'fully_diluted_market_cap_display': f"${quote_data.get('fully_diluted_market_cap', 0):,.0f}" if quote_data.get('fully_diluted_market_cap') else "N/A"
+                'price_inr': quote_data.get('price', 0) * 83,
+                'market_cap': quote_data.get('market_cap', 0),
+                'volume_24h': quote_data.get('volume_24h', 0),
+                'change_24h': quote_data.get('percent_change_24h', 0),
+                'change_7d': quote_data.get('percent_change_7d', 0),
+                'circulating_supply': crypto_data.get('circulating_supply', 0),
+                'total_supply': crypto_data.get('total_supply', 0),
+                'max_supply': crypto_data.get('max_supply', 0),
+                'rank': crypto_data.get('cmc_rank', 0),
+                'source': 'CoinMarketCap'
             }
-            
-        except Exception as e:
-            st.error(f"Error parsing CMC data: {e}")
-            return self._get_fallback_data(symbol)
-    
-    def _calculate_sentiment(self, change_24h, change_7d):
-        """Calculate market sentiment based on price changes"""
-        if change_24h > 5 and change_7d > 10:
-            return "Very Bullish"
-        elif change_24h > 2 and change_7d > 5:
-            return "Bullish"
-        elif change_24h < -5 and change_7d < -10:
-            return "Very Bearish"
-        elif change_24h < -2 and change_7d < -5:
-            return "Bearish"
-        else:
-            return "Neutral"
-    
-    def _calculate_risk_level(self, market_cap, volume_ratio, change_24h):
-        """Calculate risk level based on multiple factors"""
-        risk_score = 0
         
-        # Market cap factor (higher cap = lower risk)
-        if market_cap > 10000000000:  # $10B+
-            risk_score += 1
-        elif market_cap > 1000000000:  # $1B-$10B
-            risk_score += 2
-        elif market_cap > 100000000:   # $100M-$1B
-            risk_score += 3
-        else:                          # <$100M
-            risk_score += 4
+        # Fallback to yfinance
+        yf_data = self.yfinance.get_crypto_data(symbol)
+        if yf_data:
+            yf_data['source'] = 'Yahoo Finance'
+            return yf_data
         
-        # Volume ratio factor (higher ratio = lower risk)
-        if volume_ratio > 10:
-            risk_score += 1
-        elif volume_ratio > 5:
-            risk_score += 2
-        elif volume_ratio > 2:
-            risk_score += 3
-        else:
-            risk_score += 4
-        
-        # Volatility factor
-        if abs(change_24h) < 2:
-            risk_score += 1
-        elif abs(change_24h) < 5:
-            risk_score += 2
-        elif abs(change_24h) < 10:
-            risk_score += 3
-        else:
-            risk_score += 4
-        
-        # Determine risk level
-        if risk_score <= 6:
-            return "Low"
-        elif risk_score <= 9:
-            return "Medium"
-        else:
-            return "High"
-    
-    def _get_fallback_data(self, symbol):
-        """Provide fallback data when CMC API fails"""
+        # Final fallback
         return {
             'name': symbol,
             'symbol': symbol,
             'price_usd': 0,
             'price_inr': 0,
             'market_cap': 0,
-            'market_cap_display': "N/A",
             'volume_24h': 0,
-            'volume_24h_display': "N/A",
+            'change_24h': 0,
+            'change_7d': 0,
             'circulating_supply': 0,
-            'circulating_supply_display': "N/A",
             'total_supply': 0,
-            'total_supply_display': "N/A",
             'max_supply': 0,
-            'max_supply_display': "N/A",
-            'percent_change_1h': 0,
-            'percent_change_24h': 0,
-            'percent_change_7d': 0,
-            'percent_change_30d': 0,
-            'market_cap_rank': "N/A",
-            'volume_mcap_ratio': 0,
-            'sentiment': "Neutral",
-            'risk_level': "Medium",
-            'description': "Data temporarily unavailable",
-            'website': '',
-            'explorer': '',
-            'tags': [],
-            'category': 'cryptocurrency',
-            'fully_diluted_market_cap': 0,
-            'fully_diluted_market_cap_display': "N/A"
+            'rank': 0,
+            'source': 'Fallback Data'
         }
-
-class TechnicalAnalysis:
-    """Technical analysis utilities"""
-    
-    @staticmethod
-    def get_signal_from_indicators(indicators):
-        """Generate trading signal from technical indicators"""
-        buy_signals = 0
-        sell_signals = 0
-        
-        # RSI signals
-        if indicators['RSI'] < 30:
-            buy_signals += 1
-        elif indicators['RSI'] > 70:
-            sell_signals += 1
-        
-        # MACD signals
-        if indicators['MACD'] > indicators['MACD_Signal']:
-            buy_signals += 1
-        else:
-            sell_signals += 1
-        
-        # Bollinger Bands signals
-        if indicators['Current_Price'] <= indicators['BB_Lower']:
-            buy_signals += 1
-        elif indicators['Current_Price'] >= indicators['BB_Upper']:
-            sell_signals += 1
-        
-        # Moving Average signals
-        if indicators['SMA_20'] > indicators['SMA_50']:
-            buy_signals += 1
-        else:
-            sell_signals += 1
-        
-        # Stochastic signals
-        if indicators['Stoch_K'] < 20 and indicators['Stoch_D'] < 20:
-            buy_signals += 1
-        elif indicators['Stoch_K'] > 80 and indicators['Stoch_D'] > 80:
-            sell_signals += 1
-        
-        if buy_signals > sell_signals:
-            return "BUY", buy_signals / (buy_signals + sell_signals)
-        elif sell_signals > buy_signals:
-            return "SELL", sell_signals / (buy_signals + sell_signals)
-        else:
-            return "NEUTRAL", 0.5
 
 class MarketsPage:
     def __init__(self):
         self.market_data = MarketDataProvider()
-        self.technical_analysis = TechnicalAnalysis()
     
     def create_markets_page(self):
-        """Create the dedicated markets page"""
-        st.header("📈 Advanced Markets Analysis")
+        """Create the enhanced markets page"""
+        st.header("📈 Live Markets & Pattern Discovery")
         
-        # Exchange selection
-        st.subheader("🏢 Select Exchange")
-        col1, col2, col3, col4, col5 = st.columns(5)
+        # Top tokens by market cap
+        st.subheader("🏆 Top Tokens by Market Cap")
+        top_tokens = self.market_data.get_top_tokens_by_market_cap(15)
         
-        exchanges = ['Delta', 'CoinDCX', 'Coinswitch', 'Mudrex', 'ZebPay']
+        # Display top tokens in a grid
+        cols = st.columns(5)
+        for i, token in enumerate(top_tokens[:10]):
+            with cols[i % 5]:
+                change_color = "positive" if token['change_24h'] > 0 else "negative"
+                st.metric(
+                    token['symbol'],
+                    f"${token['price']:,.2f}",
+                    f"{token['change_24h']:.2f}%"
+                )
         
-        for i, exchange in enumerate(exchanges):
-            with [col1, col2, col3, col4, col5][i]:
-                if st.button(f"🔗 {exchange}", use_container_width=True,
-                           type="primary" if st.session_state.get('selected_exchange') == exchange else "secondary"):
-                    st.session_state.selected_exchange = exchange
+        # Exchange selection and token analysis
+        st.markdown("---")
+        st.subheader("🔍 Advanced Token Analysis")
         
-        # Initialize default exchange
-        if 'selected_exchange' not in st.session_state:
-            st.session_state.selected_exchange = 'Delta'
-        
-        st.markdown(f"### 🔍 Analyzing: {st.session_state.selected_exchange}")
-        
-        # Symbol search and selection
-        col1, col2 = st.columns([2, 1])
+        col1, col2 = st.columns([1, 1])
         
         with col1:
-            # Get available symbols for selected exchange
-            symbols = self.market_data.get_exchange_symbols(st.session_state.selected_exchange)
-            
-            # Symbol search
-            search_term = st.text_input("🔎 Search Symbol", placeholder="e.g., BTC, ETH, MATIC...")
-            
-            if search_term:
-                filtered_symbols = [s for s in symbols if search_term.upper() in s.upper()]
-            else:
-                filtered_symbols = symbols
-            
-            selected_symbol = st.selectbox(
-                "Select Symbol",
-                filtered_symbols,
-                index=0 if filtered_symbols else None
+            # Exchange selection
+            exchange = st.selectbox(
+                "Select Exchange",
+                self.market_data.available_exchanges,
+                index=0
             )
-        
-        with col2:
-            st.write("")
-            st.write("")
-            if st.button("🚀 Analyze Token", use_container_width=True, type="primary"):
+            
+            # Symbol selection
+            symbols = self.market_data.get_exchange_symbols(exchange)
+            selected_symbol = st.selectbox("Select Symbol", symbols)
+            
+            if st.button("🚀 Analyze Token", type="primary", use_container_width=True):
                 st.session_state.analyze_token = True
                 st.session_state.selected_symbol = selected_symbol
+                st.session_state.selected_exchange = exchange
+        
+        with col2:
+            # Quick stats
+            st.subheader("📊 Market Overview")
+            if top_tokens:
+                total_mcap = sum(token['market_cap'] for token in top_tokens[:10])
+                avg_change = np.mean([token['change_24h'] for token in top_tokens[:10]])
+                gainers = sum(1 for token in top_tokens[:10] if token['change_24h'] > 0)
+                
+                st.metric("Total Top 10 MCap", f"${total_mcap/1e12:.1f}T")
+                st.metric("Avg 24h Change", f"{avg_change:.2f}%")
+                st.metric("Gainers/Losers", f"{gainers}/{10-gainers}")
         
         # Token analysis section
         if st.session_state.get('analyze_token') and st.session_state.get('selected_symbol'):
-            self.display_token_analysis(
+            self.display_comprehensive_analysis(
                 st.session_state.selected_exchange,
                 st.session_state.selected_symbol
             )
-        
-        # Quick market overview
-        st.markdown("---")
-        self.display_market_overview()
     
-    def display_token_analysis(self, exchange, symbol):
-        """Display comprehensive token analysis"""
+    def display_comprehensive_analysis(self, exchange, symbol):
+        """Display comprehensive analysis with real data"""
         st.markdown("---")
-        st.subheader(f"📊 Detailed Analysis: {symbol} on {exchange}")
+        st.subheader(f"📊 Comprehensive Analysis: {symbol} on {exchange}")
         
-        # Get token data
-        token_data = self.market_data.get_token_data(exchange, symbol)
+        # Get real-time data
+        with st.spinner("Fetching real-time data..."):
+            real_time_data = self.market_data.get_real_time_data(symbol, exchange)
+            fundamental_data = self.market_data.get_fundamental_data(symbol)
+            indicators = self.market_data.get_technical_indicators(symbol, exchange)
+            patterns = self.market_data.get_patterns(symbol, exchange)
         
-        if not token_data:
-            st.error(f"Could not fetch data for {symbol} on {exchange}")
-            return
+        if not real_time_data:
+            st.warning("⚠️ Real-time data temporarily unavailable. Showing simulated data.")
+            real_time_data = {
+                'symbol': symbol,
+                'price': 1000,
+                'volume': 50000,
+                'change_24h': 0,
+                'high_24h': 1100,
+                'low_24h': 950,
+                'exchange': exchange
+            }
         
-        # Layout for token analysis
+        # Display real-time data
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
+            price_change = real_time_data.get('change_24h', 0)
+            delta_color = "normal" if price_change >= 0 else "inverse"
             st.metric(
-                "Current Price", 
-                f"₹{token_data['price']:,.2f}" if 'INR' in symbol.upper() else f"${token_data['price']:,.2f}",
-                f"{token_data['change_24h']:.2f}%"
+                "Current Price",
+                f"${real_time_data['price']:,.2f}",
+                f"{price_change:.2f}%",
+                delta_color=delta_color
             )
         
         with col2:
-            st.metric("24h Volume", f"₹{token_data['volume']:,.0f}")
+            st.metric("24h Volume", f"${real_time_data['volume']:,.0f}")
         
         with col3:
-            st.metric("24h High", f"₹{token_data['high_24h']:,.2f}")
+            st.metric("24h High", f"${real_time_data['high_24h']:,.2f}")
         
         with col4:
-            st.metric("24h Low", f"₹{token_data['low_24h']:,.2f}")
+            st.metric("24h Low", f"${real_time_data['low_24h']:,.2f}")
         
-        # Technical Analysis and Fundamental Info tabs
-        tab1, tab2, tab3 = st.tabs(["📈 Technical Analysis", "📊 Fundamental Info", "🎯 Trading Signals"])
+        # Tabs for different analysis types
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "📈 Technical Analysis", 
+            "🔍 Pattern Discovery", 
+            "💰 Fundamentals", 
+            "📊 Market Depth"
+        ])
         
         with tab1:
-            self.display_technical_analysis(symbol, exchange)
+            self.display_technical_analysis(indicators, symbol)
         
         with tab2:
-            self.display_fundamental_info(symbol)
+            self.display_pattern_discovery(patterns, symbol)
         
         with tab3:
-            self.display_trading_signals(symbol, exchange)
-    
-    def display_technical_analysis(self, symbol, exchange):
-        """Display technical indicators"""
-        indicators = self.market_data.get_technical_indicators(symbol, exchange)
+            self.display_fundamental_analysis(fundamental_data)
         
+        with tab4:
+            self.display_market_depth(symbol, exchange)
+    
+    def display_technical_analysis(self, indicators, symbol):
+        """Display comprehensive technical analysis"""
+        st.subheader("📊 Technical Indicators")
+        
+        # Main indicators
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             st.markdown('<div class="indicator-box">', unsafe_allow_html=True)
-            rsi_color = "red" if indicators['RSI'] > 70 else "green" if indicators['RSI'] < 30 else "orange"
-            st.metric("RSI (14)", f"{indicators['RSI']:.2f}", delta_color="off")
-            st.progress(indicators['RSI'] / 100)
-            st.caption(f"Oversold < 30, Overbought > 70")
+            rsi = indicators.get('RSI', 50)
+            rsi_status = "Oversold" if rsi < 30 else "Overbought" if rsi > 70 else "Neutral"
+            st.metric("RSI (14)", f"{rsi:.2f}")
+            st.progress(rsi / 100)
+            st.caption(f"Status: {rsi_status}")
             st.markdown('</div>', unsafe_allow_html=True)
         
         with col2:
             st.markdown('<div class="indicator-box">', unsafe_allow_html=True)
-            macd_signal = "Bullish" if indicators['MACD'] > indicators['MACD_Signal'] else "Bearish"
-            st.metric("MACD", f"{indicators['MACD']:.4f}")
-            st.metric("MACD Signal", f"{indicators['MACD_Signal']:.4f}")
-            st.caption(f"Signal: {macd_signal}")
+            macd = indicators.get('MACD', 0)
+            macd_signal = indicators.get('MACD_Signal', 0)
+            macd_signal_text = "Bullish" if macd > macd_signal else "Bearish"
+            st.metric("MACD", f"{macd:.4f}")
+            st.metric("Signal", f"{macd_signal:.4f}")
+            st.caption(f"Signal: {macd_signal_text}")
             st.markdown('</div>', unsafe_allow_html=True)
         
         with col3:
@@ -694,668 +781,255 @@ class MarketsPage:
                          (indicators['BB_Upper'] - indicators['BB_Lower'])) * 100
             st.metric("Bollinger Position", f"{bb_position:.1f}%")
             st.progress(bb_position / 100)
-            st.caption("Lower Band: Buy, Upper Band: Sell")
+            bb_status = "Lower Band" if bb_position < 20 else "Upper Band" if bb_position > 80 else "Middle"
+            st.caption(f"Position: {bb_status}")
             st.markdown('</div>', unsafe_allow_html=True)
         
         with col4:
             st.markdown('<div class="indicator-box">', unsafe_allow_html=True)
-            st.metric("Stoch K", f"{indicators['Stoch_K']:.1f}")
-            st.metric("Stoch D", f"{indicators['Stoch_D']:.1f}")
-            stoch_signal = "Oversold" if indicators['Stoch_K'] < 20 else "Overbought" if indicators['Stoch_K'] > 80 else "Neutral"
-            st.caption(f"Signal: {stoch_signal}")
+            stoch_k = indicators.get('Stoch_K', 50)
+            stoch_d = indicators.get('Stoch_D', 50)
+            st.metric("Stoch %K", f"{stoch_k:.1f}")
+            st.metric("Stoch %D", f"{stoch_d:.1f}")
+            stoch_status = "Oversold" if stoch_k < 20 else "Overbought" if stoch_k > 80 else "Neutral"
+            st.caption(f"Status: {stoch_status}")
             st.markdown('</div>', unsafe_allow_html=True)
         
         # Additional indicators
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("Moving Averages")
-            ma_data = {
-                'Period': ['SMA 20', 'SMA 50'],
-                'Value': [indicators['SMA_20'], indicators['SMA_50']],
-                'Signal': ['Short-term', 'Long-term']
-            }
-            st.dataframe(pd.DataFrame(ma_data), use_container_width=True)
-            
-            # MA Crossover analysis
-            if indicators['SMA_20'] > indicators['SMA_50']:
-                st.success("✅ Golden Cross: SMA 20 > SMA 50 (Bullish)")
-            else:
-                st.warning("❌ Death Cross: SMA 20 < SMA 50 (Bearish)")
-        
-        with col2:
-            st.subheader("Price Levels")
-            price_levels = {
-                'Level': ['Current', 'Support (BB Lower)', 'Resistance (BB Upper)'],
-                'Value': [
-                    indicators['Current_Price'],
-                    indicators['BB_Lower'],
-                    indicators['BB_Upper']
-                ]
-            }
-            st.dataframe(pd.DataFrame(price_levels), use_container_width=True)
-            
-            # Price position analysis
-            bb_middle = (indicators['BB_Upper'] + indicators['BB_Lower']) / 2
-            if indicators['Current_Price'] > bb_middle:
-                st.info("📈 Price above middle band")
-            else:
-                st.info("📉 Price below middle band")
-    
-    def display_fundamental_info(self, symbol):
-        """Display REAL fundamental information about the token"""
-        st.subheader("💰 Real Fundamental Data (CoinMarketCap)")
-        
-        with st.spinner("Fetching real-time data from CoinMarketCap..."):
-            fundamental_data = self.market_data.get_real_fundamental_data(symbol)
-        
-        st.markdown('<div class="token-card">', unsafe_allow_html=True)
-        
-        # Price and Market Data
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            price_change_1h = fundamental_data['percent_change_1h']
-            price_change_24h = fundamental_data['percent_change_24h']
-            price_change_7d = fundamental_data['percent_change_7d']
-            
-            st.metric(
-                "USD Price", 
-                f"${fundamental_data['price_usd']:,.2f}",
-                f"{price_change_24h:.2f}%"
-            )
-            st.metric("INR Price", f"₹{fundamental_data['price_inr']:,.2f}")
-        
-        with col2:
-            st.metric("Market Cap", fundamental_data['market_cap_display'])
-            st.metric("Market Cap Rank", f"#{fundamental_data['market_cap_rank']}")
-            st.metric("Fully Diluted MCap", fundamental_data['fully_diluted_market_cap_display'])
-        
-        with col3:
-            st.metric("24h Volume", fundamental_data['volume_24h_display'])
-            st.metric("Volume/MCap Ratio", f"{fundamental_data['volume_mcap_ratio']:.2f}%")
-            
-            # Sentiment indicator
-            sentiment_color = {
-                'Very Bullish': 'green',
-                'Bullish': 'lightgreen',
-                'Neutral': 'orange',
-                'Bearish': 'lightcoral',
-                'Very Bearish': 'red'
-            }.get(fundamental_data['sentiment'], 'gray')
-            
-            st.metric("Market Sentiment", fundamental_data['sentiment'])
-        
-        with col4:
-            st.metric("Circulating Supply", fundamental_data['circulating_supply_display'])
-            st.metric("Total Supply", fundamental_data['total_supply_display'])
-            st.metric("Max Supply", fundamental_data['max_supply_display'])
-        
-        # Price performance chart
-        st.subheader("📈 Price Performance")
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            delta_color = "normal"
-            if price_change_1h > 0:
-                delta_color = "normal"
-            st.metric("1h Change", f"{price_change_1h:.2f}%", delta_color=delta_color)
-        
-        with col2:
-            delta_color = "normal"
-            if price_change_24h > 0:
-                delta_color = "normal"
-            st.metric("24h Change", f"{price_change_24h:.2f}%", delta_color=delta_color)
-        
-        with col3:
-            delta_color = "normal"
-            if price_change_7d > 0:
-                delta_color = "normal"
-            st.metric("7d Change", f"{price_change_7d:.2f}%", delta_color=delta_color)
-        
-        with col4:
-            price_change_30d = fundamental_data['percent_change_30d']
-            delta_color = "normal"
-            if price_change_30d > 0:
-                delta_color = "normal"
-            st.metric("30d Change", f"{price_change_30d:.2f}%", delta_color=delta_color)
-        
-        # Risk Assessment
-        st.subheader("⚠️ Risk Assessment")
+        st.subheader("Additional Indicators")
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            risk_color = {
-                'Low': 'green',
-                'Medium': 'orange',
-                'High': 'red'
-            }.get(fundamental_data['risk_level'], 'gray')
+            st.write("**Moving Averages**")
+            ma_data = {
+                'MA': ['SMA 20', 'SMA 50', 'EMA 12', 'EMA 26'],
+                'Value': [
+                    indicators.get('SMA_20', 0),
+                    indicators.get('SMA_50', 0),
+                    indicators.get('EMA_12', 0),
+                    indicators.get('EMA_26', 0)
+                ]
+            }
+            st.dataframe(pd.DataFrame(ma_data), use_container_width=True)
             
-            st.metric("Risk Level", fundamental_data['risk_level'])
-            
-            # Risk factors
-            if fundamental_data['risk_level'] == 'High':
-                st.error("High volatility and risk. Trade with caution.")
-            elif fundamental_data['risk_level'] == 'Medium':
-                st.warning("Moderate risk. Use proper risk management.")
+            # MA Analysis
+            if indicators.get('SMA_20', 0) > indicators.get('SMA_50', 0):
+                st.success("✅ Golden Cross: Short-term > Long-term (Bullish)")
             else:
-                st.success("Lower risk profile. Still monitor positions.")
+                st.warning("❌ Death Cross: Short-term < Long-term (Bearish)")
         
         with col2:
-            # Liquidity score based on volume/mcap ratio
-            volume_ratio = fundamental_data['volume_mcap_ratio']
-            if volume_ratio > 10:
-                liquidity_score = "High"
-                st.success("💰 High Liquidity")
-            elif volume_ratio > 5:
-                liquidity_score = "Medium"
-                st.warning("💰 Medium Liquidity")
-            else:
-                liquidity_score = "Low"
-                st.error("💰 Low Liquidity")
+            st.write("**Volatility & Momentum**")
+            vol_data = {
+                'Indicator': ['ATR', 'ADX', 'OBV'],
+                'Value': [
+                    indicators.get('ATR', 0),
+                    indicators.get('ADX', 0),
+                    f"{indicators.get('OBV', 0):,.0f}"
+                ]
+            }
+            st.dataframe(pd.DataFrame(vol_data), use_container_width=True)
             
-            st.metric("Liquidity Score", liquidity_score)
+            # ADX Analysis
+            adx = indicators.get('ADX', 0)
+            if adx > 25:
+                st.info("📈 Strong Trend (ADX > 25)")
+            elif adx > 20:
+                st.info("📊 Moderate Trend (ADX > 20)")
+            else:
+                st.info("📉 Weak Trend (ADX < 20)")
         
         with col3:
-            # Market cap category
-            market_cap = fundamental_data['market_cap']
-            if market_cap > 10000000000:  # $10B+
-                cap_category = "Large Cap"
-                st.success("🏢 Large Cap")
-            elif market_cap > 1000000000:  # $1B-$10B
-                cap_category = "Mid Cap"
-                st.warning("🏢 Mid Cap")
-            else:
-                cap_category = "Small Cap"
-                st.error("🏢 Small Cap")
+            st.write("**Price Levels**")
+            price_data = {
+                'Level': ['Current', 'BB Upper', 'BB Middle', 'BB Lower'],
+                'Value': [
+                    indicators.get('Current_Price', 0),
+                    indicators.get('BB_Upper', 0),
+                    indicators.get('BB_Middle', 0),
+                    indicators.get('BB_Lower', 0)
+                ]
+            }
+            st.dataframe(pd.DataFrame(price_data), use_container_width=True)
             
-            st.metric("Market Cap Category", cap_category)
+            # Price position analysis
+            current_price = indicators.get('Current_Price', 0)
+            bb_middle = indicators.get('BB_Middle', 0)
+            if current_price > bb_middle:
+                st.success("📈 Price above middle band")
+            else:
+                st.warning("📉 Price below middle band")
+    
+    def display_pattern_discovery(self, patterns, symbol):
+        """Display automated pattern discovery results"""
+        st.subheader("🎯 Automated Pattern Discovery")
         
-        # Project Information
-        st.subheader("🔗 Project Information")
-        col1, col2 = st.columns(2)
+        pattern_summary = self.market_data.pattern_discovery.get_pattern_summary()
+        
+        # Pattern summary
+        col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.write(f"**Name:** {fundamental_data['name']}")
-            st.write(f"**Symbol:** {fundamental_data['symbol']}")
-            st.write(f"**Category:** {fundamental_data['category']}")
-            
-            if fundamental_data['website']:
-                st.write(f"**Website:** [{fundamental_data['website']}]({fundamental_data['website']})")
-            if fundamental_data['explorer']:
-                st.write(f"**Blockchain Explorer:** [{fundamental_data['explorer']}]({fundamental_data['explorer']})")
-        
+            st.metric("Bullish Patterns", pattern_summary['total_bullish'])
         with col2:
-            if fundamental_data['tags']:
-                st.write("**Tags:**")
-                for tag in fundamental_data['tags'][:5]:  # Show first 5 tags
-                    st.write(f"• {tag}")
+            st.metric("Bearish Patterns", pattern_summary['total_bearish'])
+        with col3:
+            st.metric("Neutral Patterns", pattern_summary['total_neutral'])
+        with col4:
+            sentiment_color = {
+                'bullish': 'green',
+                'bearish': 'red',
+                'neutral': 'orange'
+            }.get(pattern_summary['dominant_sentiment'], 'gray')
+            st.metric("Dominant Sentiment", pattern_summary['dominant_sentiment'].title())
         
-        # Project Description
-        st.subheader("📝 Project Description")
-        st.info(fundamental_data['description'][:500] + "..." if len(fundamental_data['description']) > 500 else fundamental_data['description'])
+        # Display individual patterns
+        st.subheader("Discovered Patterns")
         
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    def display_trading_signals(self, symbol, exchange):
-        """Display trading signals based on technical analysis"""
-        indicators = self.market_data.get_technical_indicators(symbol, exchange)
-        signal, confidence = self.technical_analysis.get_signal_from_indicators(indicators)
+        if not any(patterns.values()):
+            st.info("No significant patterns detected in recent price action.")
+            return
         
-        st.subheader("🎯 Trading Signals")
+        # Bullish patterns
+        if patterns['bullish']:
+            st.success("### 🟢 Bullish Patterns")
+            for pattern in patterns['bullish'][:5]:  # Show top 5
+                st.write(f"**{pattern['name']}** (Strength: {pattern['strength']}, Recency: {pattern['period']} periods ago)")
         
-        col1, col2, col3 = st.columns([1, 2, 1])
+        # Bearish patterns
+        if patterns['bearish']:
+            st.error("### 🔴 Bearish Patterns")
+            for pattern in patterns['bearish'][:5]:  # Show top 5
+                st.write(f"**{pattern['name']}** (Strength: {pattern['strength']}, Recency: {pattern['period']} periods ago)")
         
-        with col2:
-            if signal == "BUY":
-                st.success(f"## 🟢 BUY SIGNAL")
-                st.metric("Confidence Level", f"{confidence*100:.1f}%")
-            elif signal == "SELL":
-                st.error(f"## 🔴 SELL SIGNAL")
-                st.metric("Confidence Level", f"{confidence*100:.1f}%")
-            else:
-                st.warning(f"## 🟡 NEUTRAL SIGNAL")
-                st.metric("Confidence Level", f"{confidence*100:.1f}%")
+        # Neutral patterns
+        if patterns['neutral']:
+            st.warning("### 🟡 Neutral Patterns")
+            for pattern in patterns['neutral'][:5]:  # Show top 5
+                st.write(f"**{pattern['name']}** (Strength: {pattern['strength']}, Recency: {pattern['period']} periods ago)")
         
-        # Signal breakdown
-        st.subheader("Signal Components")
+        # Pattern interpretation
+        st.subheader("💡 Pattern Interpretation")
         
-        components = [
-            ("RSI", "Oversold/Bought", indicators['RSI'] < 30 or indicators['RSI'] > 70),
-            ("MACD", "Crossover", indicators['MACD'] > indicators['MACD_Signal']),
-            ("Bollinger Bands", "Price Position", 
-             indicators['Current_Price'] <= indicators['BB_Lower'] or indicators['Current_Price'] >= indicators['BB_Upper']),
-            ("Moving Averages", "Crossover", indicators['SMA_20'] > indicators['SMA_50']),
-            ("Stochastic", "Oversold/Bought", indicators['Stoch_K'] < 20 or indicators['Stoch_K'] > 80)
-        ]
-        
-        for component, description, condition in components:
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col1:
-                st.write(f"**{component}**")
-            with col2:
-                st.write(description)
-            with col3:
-                if condition:
-                    st.success("✅ Active")
-                else:
-                    st.info("⚪ Inactive")
-        
-        # Trading recommendations
-        st.subheader("💡 Trading Recommendations")
-        
-        if signal == "BUY":
+        if pattern_summary['dominant_sentiment'] == 'bullish':
             st.success("""
-            **Recommended Actions:**
-            - Consider entering long positions
-            - Set stop-loss below recent support
-            - Target resistance levels for profit-taking
-            - Monitor for trend confirmation
+            **Trading Implications:**
+            - Consider long positions or adding to existing longs
+            - Look for entry points on pullbacks
+            - Set stop-loss below recent support levels
+            - Monitor for pattern confirmation with volume
             """)
-        elif signal == "SELL":
+        elif pattern_summary['dominant_sentiment'] == 'bearish':
             st.error("""
-            **Recommended Actions:**
-            - Consider exiting long positions
-            - Potential short entry opportunities
+            **Trading Implications:**
+            - Consider short positions or reducing longs
+            - Look for resistance levels to enter shorts
             - Set stop-loss above recent resistance
-            - Monitor for trend reversal signs
+            - Be cautious of potential reversals
             """)
         else:
             st.warning("""
-            **Recommended Actions:**
-            - Wait for clearer market direction
+            **Trading Implications:**
+            - Market is in consolidation phase
             - Consider range-bound strategies
+            - Wait for breakout confirmation
             - Monitor key support/resistance levels
-            - Look for breakout/breakdown signals
             """)
     
-    def display_market_overview(self):
-        """Display market overview at the bottom"""
-        st.subheader("📊 Market Overview")
+    def display_fundamental_analysis(self, fundamental_data):
+        """Display fundamental analysis"""
+        st.subheader("💰 Fundamental Analysis")
+        st.info(f"Data Source: {fundamental_data.get('source', 'Unknown')}")
         
-        # Simulated market data
-        markets = [
-            {'symbol': 'BTC-INR', 'price': 3500000, 'change': 2.5, 'volume': 25000000},
-            {'symbol': 'ETH-INR', 'price': 200000, 'change': 1.8, 'volume': 15000000},
-            {'symbol': 'USDT-INR', 'price': 83.2, 'change': 0.1, 'volume': 50000000},
-            {'symbol': 'MATIC-INR', 'price': 60.5, 'change': -0.5, 'volume': 5000000},
-            {'symbol': 'ADA-INR', 'price': 40.2, 'change': 3.2, 'volume': 3000000},
-            {'symbol': 'DOT-INR', 'price': 502.3, 'change': -1.2, 'volume': 2000000},
-        ]
+        col1, col2, col3, col4 = st.columns(4)
         
-        for market in markets:
-            col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
-            with col1:
-                st.write(f"**{market['symbol']}**")
-            with col2:
-                st.write(f"₹{market['price']:,.2f}")
-            with col3:
-                change_color = "green" if market['change'] > 0 else "red"
-                st.write(f":{change_color}[{market['change']}%]")
-            with col4:
-                st.write(f"₹{market['volume']:,.0f}")
-
-# Simplified version of other classes to avoid errors
-class IndianExchangeData:
-    def __init__(self):
-        self.delta = DeltaExchange()
-    
-    def get_all_markets(self):
-        """Get markets from all Indian exchanges"""
-        markets = []
+        with col1:
+            st.metric("USD Price", f"${fundamental_data['price_usd']:,.2f}")
+            st.metric("INR Price", f"₹{fundamental_data['price_inr']:,.2f}")
         
-        # Delta Exchange products
-        delta_products = self.delta.get_products()
-        for product in delta_products[:20]:
-            if product and product.get('contract_type') in ['spot', 'perpetual_futures', 'futures']:
-                markets.append({
-                    'exchange': 'Delta',
-                    'symbol': product.get('symbol', ''),
-                    'product': product.get('contract_type', ''),
-                    'base_currency': product.get('underlying_asset', {}).get('symbol', ''),
-                    'quote_currency': product.get('settling_asset', {}).get('symbol', ''),
-                    'tick_size': product.get('tick_size', 0.01)
-                })
-        
-        # Add Indian exchange pairs
-        indian_pairs = ['BTC-INR', 'ETH-INR', 'SOL-INR', 'MATIC-INR', 'ADA-INR', 'DOT-INR']
-        for pair in indian_pairs:
-            markets.append({
-                'exchange': 'Indian Exchanges',
-                'symbol': pair,
-                'product': 'spot',
-                'base_currency': pair.split('-')[0],
-                'quote_currency': 'INR',
-                'tick_size': 0.01
-            })
-        
-        return markets
-    
-    def get_consolidated_prices(self):
-        """Get consolidated prices across exchanges"""
-        prices = []
-        
-        # Delta prices
-        products = self.delta.get_products()[:10]
-        for product in products:
-            if product:
-                ticker = self.delta.get_ticker(product.get('symbol'))
-                if ticker:
-                    prices.append({
-                        'exchange': 'Delta',
-                        'symbol': product.get('symbol', ''),
-                        'price': float(ticker.get('close', 0)),
-                        'volume': float(ticker.get('volume', 0)),
-                        'change_24h': float(ticker.get('change_24h', 0)),
-                        'product_type': product.get('contract_type', ''),
-                        'timestamp': datetime.now()
-                    })
-        
-        # Add Indian exchange prices (simulated)
-        indian_prices = {
-            'BTC-INR': 3500000,
-            'ETH-INR': 200000,
-            'SOL-INR': 8000,
-            'MATIC-INR': 60,
-            'ADA-INR': 40,
-            'DOT-INR': 500
-        }
-        
-        for pair, price in indian_prices.items():
-            prices.append({
-                'exchange': 'Indian Exchanges',
-                'symbol': pair,
-                'price': price,
-                'volume': np.random.uniform(100000, 500000),
-                'change_24h': np.random.uniform(-5, 5),
-                'product_type': 'spot',
-                'timestamp': datetime.now()
-            })
-        
-        return prices
-
-# Simplified TradingStrategies class
-class TradingStrategies:
-    """Semi-automated trading signal generators using TA-Lib"""
-    
-    @staticmethod
-    def rsi_strategy(data, period=14, oversold=30, overbought=70):
-        """RSI-based trading signals using TA-Lib"""
-        if len(data) < period:
-            return "NEUTRAL", 0
-        
-        if TA_LIB_AVAILABLE:
-            rsi = talib.RSI(np.array(data, dtype=float), timeperiod=period)[-1]
-        else:
-            # Manual RSI calculation
-            delta = np.diff(data)
-            gain = np.where(delta > 0, delta, 0)
-            loss = np.where(delta < 0, -delta, 0)
-            
-            avg_gain = np.mean(gain[-period:])
-            avg_loss = np.mean(loss[-period:])
-            
-            if avg_loss == 0:
-                rsi = 100
+        with col2:
+            market_cap = fundamental_data['market_cap']
+            if market_cap > 1e9:
+                display_mcap = f"${market_cap/1e9:.2f}B"
             else:
-                rs = avg_gain / avg_loss
-                rsi = 100 - (100 / (1 + rs))
+                display_mcap = f"${market_cap/1e6:.2f}M"
+            st.metric("Market Cap", display_mcap)
+            st.metric("Rank", f"#{fundamental_data['rank']}")
         
-        if rsi < oversold:
-            return "BUY", rsi
-        elif rsi > overbought:
-            return "SELL", rsi
+        with col3:
+            st.metric("24h Change", f"{fundamental_data['change_24h']:.2f}%")
+            st.metric("7d Change", f"{fundamental_data.get('change_7d', 0):.2f}%")
+        
+        with col4:
+            st.metric("24h Volume", f"${fundamental_data['volume_24h']:,.0f}")
+            st.metric("Circulating Supply", f"{fundamental_data['circulating_supply']:,.0f}")
+    
+    def display_market_depth(self, symbol, exchange):
+        """Display market depth information"""
+        st.subheader("📊 Market Depth")
+        
+        if exchange == 'Delta':
+            orderbook = self.market_data.delta.get_orderbook(symbol)
+            if orderbook:
+                # Display bids and asks
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.write("**Bids (Buy Orders)**")
+                    bids = orderbook.get('buy', [])[:10]  # Top 10 bids
+                    bids_df = pd.DataFrame(bids, columns=['Price', 'Size'])
+                    if not bids_df.empty:
+                        bids_df['Value'] = bids_df['Price'] * bids_df['Size']
+                        st.dataframe(bids_df, use_container_width=True)
+                
+                with col2:
+                    st.write("**Asks (Sell Orders)**")
+                    asks = orderbook.get('sell', [])[:10]  # Top 10 asks
+                    asks_df = pd.DataFrame(asks, columns=['Price', 'Size'])
+                    if not asks_df.empty:
+                        asks_df['Value'] = asks_df['Price'] * asks_df['Size']
+                        st.dataframe(asks_df, use_container_width=True)
+                
+                # Calculate spread
+                if bids and asks:
+                    best_bid = bids[0][0]
+                    best_ask = asks[0][0]
+                    spread = best_ask - best_bid
+                    spread_percent = (spread / best_bid) * 100
+                    
+                    st.metric("Spread", f"${spread:.4f}", f"{spread_percent:.4f}%")
+            else:
+                st.info("Market depth data temporarily unavailable.")
         else:
-            return "NEUTRAL", rsi
+            st.info("Market depth available for Delta Exchange only.")
 
-# Simplified SemiAutomatedBots class
-class SemiAutomatedBots:
-    """Semi-automated bots that generate trading signals"""
+# Simplified platform class to run the app
+def main():
+    st.title("Aethos Platform - Advanced Markets")
     
-    def __init__(self):
-        self.strategies = TradingStrategies()
-        self.exchange_data = IndianExchangeData()
+    # API status
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.secrets.get("COIN_MARKET_CAP_API_KEY"):
+            st.success("✅ CMC API: Connected")
+        else:
+            st.error("❌ CMC API: Not Configured")
     
-    def create_signal_dashboard(self):
-        """Create dashboard for signal generation bots"""
-        st.subheader("🤖 Semi-Automated Signal Bots")
-        st.info("Signal bot functionality - Simplified version")
-
-# Simplified AutomatedTradingBot class
-class AutomatedTradingBot:
-    """Fully automated trading bot with paper and live trading"""
+    with col2:
+        if st.secrets.get("DELTA_API_KEY"):
+            st.success("✅ Delta API: Connected")
+        else:
+            st.warning("⚠️ Delta API: Not Configured")
     
-    def __init__(self):
-        self.exchange_data = IndianExchangeData()
-        self.paper_balance = 100000
+    with col3:
+        if YFINANCE_AVAILABLE:
+            st.success("✅ Yahoo Finance: Available")
+        else:
+            st.warning("⚠️ Yahoo Finance: Not Available")
     
-    def create_automated_trading_dashboard(self):
-        """Create dashboard for automated trading bots"""
-        st.subheader("⚡ Fully Automated Trading Bots")
-        st.info("Automated trading functionality - Simplified version")
+    # Initialize and run markets page
+    markets_page = MarketsPage()
+    markets_page.create_markets_page()
 
-# Simplified IndianTraderTools class
-class IndianTraderTools:
-    def __init__(self):
-        self.exchange_data = IndianExchangeData()
-    
-    def create_tax_calculator(self):
-        """Create advanced Indian crypto tax calculator"""
-        st.subheader("🇮🇳 Advanced Tax Calculator")
-        st.info("Tax calculator functionality - Simplified version")
-
-# Main Platform Class
-class AethosIndiaPlatform:
-    def __init__(self):
-        self.exchange_data = IndianExchangeData()
-        self.semi_bots = SemiAutomatedBots()
-        self.auto_bots = AutomatedTradingBot()
-        self.indian_tools = IndianTraderTools()
-        self.markets_page = MarketsPage()
-        self.initialize_session_state()
-    
-    def initialize_session_state(self):
-        """Initialize session state variables"""
-        if 'selected_symbol' not in st.session_state:
-            st.session_state.selected_symbol = "BTCUSDT"
-        if 'auto_refresh' not in st.session_state:
-            st.session_state.auto_refresh = False
-        if 'signal_history' not in st.session_state:
-            st.session_state.signal_history = []
-        if 'running_bots' not in st.session_state:
-            st.session_state.running_bots = {}
-        if 'selected_exchange' not in st.session_state:
-            st.session_state.selected_exchange = 'Delta'
-        if 'analyze_token' not in st.session_state:
-            st.session_state.analyze_token = False
-    
-    def create_header(self):
-        """Create the main header section"""
-        st.markdown("""
-        <div class="main-header">
-            <h1 style="margin:0; padding:0; color: #f0f2f6;">AETHOS PLATFORM 🇮🇳</h1>
-            <div class="platform-tagline">Advanced Algorithmic Trading for Indian Crypto Markets</div>
-            <div class="indian-flag" style="margin-top: 1rem;">
-                🤖 Semi-Auto Signals • ⚡ Full Auto Trading • 📊 Real-time Analytics
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Real-time metrics
-        prices = self.exchange_data.get_consolidated_prices()
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            active_bots = len(st.session_state.get('running_bots', {}))
-            st.metric("Active Bots", active_bots, "Live")
-        
-        with col2:
-            total_signals = len(st.session_state.get('signal_history', []))
-            st.metric("Signals Today", total_signals)
-        
-        with col3:
-            if prices:
-                btc_price = next((p for p in prices if 'BTC' in p['symbol']), None)
-                if btc_price:
-                    st.metric("BTC Price", f"${btc_price['price']:,.0f}", 
-                             f"{btc_price['change_24h']:.1f}%")
-        
-        with col4:
-            st.metric("Platform Status", "Online", delta="Real-time")
-    
-    def create_dashboard(self):
-        """Create the main dashboard page"""
-        st.header("🏠 Platform Dashboard")
-        
-        # Quick stats
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Total Balance", "₹1,25,000", "₹5,000")
-        with col2:
-            st.metric("Active Strategies", "3", "1")
-        with col3:
-            st.metric("Today's P&L", "₹2,500", "₹500")
-        with col4:
-            st.metric("Success Rate", "72%", "3%")
-        
-        # Recent activity
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("📈 Portfolio Performance")
-            # Simple portfolio chart
-            dates = pd.date_range(start='2024-01-01', end=datetime.now(), freq='D')
-            portfolio_value = 100000 + np.cumsum(np.random.randn(len(dates)) * 1000)
-            
-            fig = px.line(x=dates, y=portfolio_value, title="Portfolio Value Over Time")
-            fig.update_layout(height=300)
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            st.subheader("🔔 Recent Alerts")
-            alerts = [
-                {"time": "10:30 AM", "message": "BTC strong buy signal detected", "type": "success"},
-                {"time": "09:15 AM", "message": "ETH approaching resistance level", "type": "warning"},
-                {"time": "Yesterday", "message": "New tax regulations announced", "type": "info"},
-            ]
-            
-            for alert in alerts:
-                if alert["type"] == "success":
-                    st.success(f"**{alert['time']}**: {alert['message']}")
-                elif alert["type"] == "warning":
-                    st.warning(f"**{alert['time']}**: {alert['message']}")
-                else:
-                    st.info(f"**{alert['time']}**: {alert['message']}")
-        
-        # Quick actions
-        st.subheader("🚀 Quick Actions")
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            if st.button("🤖 Deploy New Bot", use_container_width=True):
-                st.info("Navigate to Algo Trading tab")
-        with col2:
-            if st.button("📊 Analyze Market", use_container_width=True):
-                st.info("Navigate to Markets tab")
-        with col3:
-            if st.button("💰 Calculate Tax", use_container_width=True):
-                st.info("Tax calculator opened")
-        with col4:
-            if st.button("🔄 Refresh Data", use_container_width=True):
-                st.rerun()
-
-    def create_algorithmic_trading_section(self):
-        """Create comprehensive algo trading section"""
-        st.header("🎯 Algorithmic Trading Studio")
-        
-        tab1, tab2, tab3 = st.tabs([
-            "🤖 Semi-Auto Signal Bots", 
-            "⚡ Fully Automated Bots", 
-            "📊 Live Bot Monitoring"
-        ])
-        
-        with tab1:
-            self.semi_bots.create_signal_dashboard()
-        
-        with tab2:
-            self.auto_bots.create_automated_trading_dashboard()
-        
-        with tab3:
-            st.subheader("📊 Live Bot Monitoring & Analytics")
-            st.info("Bot monitoring functionality - Simplified version")
-
-    def create_indian_trader_tools(self):
-        """Create Indian trader tools section"""
-        st.header("🇮🇳 Indian Trader Suite")
-        
-        tab1, tab2, tab3 = st.tabs([
-            "💰 Tax Calculator", 
-            "📊 Market Insights", 
-            "📜 Regulatory Center"
-        ])
-        
-        with tab1:
-            self.indian_tools.create_tax_calculator()
-        
-        with tab2:
-            st.subheader("📊 Indian Market Insights")
-            st.info("Market insights functionality - Simplified version")
-        
-        with tab3:
-            st.subheader("📜 Regulatory Compliance Center")
-            st.info("Regulatory information - Simplified version")
-
-    def create_markets_page(self):
-        """Create the dedicated markets page"""
-        self.markets_page.create_markets_page()
-
-    def run(self):
-        """Main application runner"""
-        self.create_header()
-        
-        # Create main navigation
-        tab1, tab2, tab3, tab4 = st.tabs([
-            "🏠 Dashboard", 
-            "🎯 Algo Trading", 
-            "🇮🇳 Trader Tools", 
-            "📈 Markets"
-        ])
-        
-        with tab1:
-            self.create_dashboard()
-        
-        with tab2:
-            self.create_algorithmic_trading_section()
-        
-        with tab3:
-            self.create_indian_trader_tools()
-        
-        with tab4:
-            self.create_markets_page()
-
-# Run the application
 if __name__ == "__main__":
-    # Display TA-Lib status
-    if not TA_LIB_AVAILABLE:
-        st.sidebar.warning("""
-        ⚠ TA-Lib not installed. 
-        For optimal performance, install TA-Lib:
-        ```
-        # On Ubuntu/Debian
-        sudo apt-get install ta-lib
-        
-        # Then install Python package
-        pip install TA-Lib
-        ```
-        """)
-    
-    # Check for CMC API key
-    if not st.secrets.get("COIN_MARKET_CAP_API_KEY"):
-        st.sidebar.error("""
-        ❌ CoinMarketCap API key not found.
-        Add COIN_MARKET_CAP_API_KEY to your Streamlit secrets for real fundamental data.
-        """)
-    
-    platform = AethosIndiaPlatform()
-    platform.run()
+    main()
