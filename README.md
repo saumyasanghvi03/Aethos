@@ -9,108 +9,66 @@ Our vision is to democratize algorithmic trading and provide Indian traders with
 ## Features
 
 ### Trading Capabilities
+
 - **Semi-Automated Trading Bots**: Customizable algorithmic strategies with manual oversight
 - **Fully Automated Trading**: Set-and-forget algorithmic execution with advanced risk management
 - **Multi-Exchange Support**: Seamless integration with major cryptocurrency exchanges
 - **Indian Trading Pairs**: Native support for INR pairs (BTC/INR, ETH/INR, USDT/INR, etc.)
 
 ### Analytics & Intelligence
+
 - **Real-Time Market Analytics**: Live price tracking, volume analysis, and market depth visualization
 - **Technical Indicators**: Comprehensive suite of indicators (RSI, MACD, Bollinger Bands, and more)
 - **Portfolio Tracking**: Monitor your holdings across multiple exchanges in one unified dashboard
 - **Historical Data Analysis**: Backtesting capabilities with extensive historical market data
 
 ### India-Specific Tools
+
 - **INR Integration**: Native rupee support for deposits, withdrawals, and P&L calculations
 - **Tax Compliance Tools**: Automated reporting features aligned with Indian cryptocurrency taxation
 - **Regulatory Compliance**: Built-in safeguards to ensure adherence to Indian crypto regulations
 - **UPI Integration**: Seamless fiat on/off-ramp via Unified Payments Interface
 
-## Tech Stack
-
-- **Python**: Core application framework and trading logic
-- **Streamlit**: Interactive web-based user interface
-- **Plotly**: Advanced charting and data visualization
-- **Pandas**: Data manipulation and time-series analysis
-- **NumPy**: High-performance numerical computing
-- **Exchange APIs**: Direct integration with Binance, WazirX, CoinDCX, and other major platforms
-- **SQLite/PostgreSQL**: Trade history and portfolio data storage
-- **WebSocket**: Real-time market data streaming
-
-## Setup
-
-### Prerequisites
-- Python 3.8 or higher
-- pip package manager
-- API keys from your preferred cryptocurrency exchange(s)
-
-### Installation Steps
-
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/saumyasanghvi03/Aethos.git
-   cd Aethos
-   ```
-
-2. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Configure environment variables**:
-   Create a `.env` file in the root directory:
-   ```env
-   EXCHANGE_API_KEY=your_api_key_here
-   EXCHANGE_API_SECRET=your_api_secret_here
-   DATABASE_URL=sqlite:///aethos.db
-   ```
-
-4. **Run the application**:
-   ```bash
-   streamlit run app.py
-   ```
-
-5. **Access the platform**:
-   Open your browser and navigate to `http://localhost:8501`
-
 ## Usage Guide
 
-Aethos is organized into four main sections:
-
 ### 1. Dashboard
-Your central hub for monitoring portfolio performance, recent trades, and market overview.
-- View real-time P&L in INR
-- Track open positions and order status
-- Monitor key market indicators
-- Quick access to favorite trading pairs
+
+The central hub displays:
+- Real-time portfolio value in INR
+- Active trading pairs and their performance
+- Recent trade history
+- Market overview for major INR pairs
 
 ### 2. Algo Trading
-Design, backtest, and deploy automated trading strategies.
-- Strategy builder with visual workflow
-- Backtesting engine with historical data
-- Paper trading mode for risk-free testing
-- Live deployment with customizable parameters
-- Risk management controls (stop-loss, take-profit, position sizing)
+
+**Semi-Automated Mode:**
+1. Select your preferred trading strategy
+2. Configure parameters (entry/exit points, stop-loss levels)
+3. Review bot recommendations
+4. Approve or modify suggested trades manually
+
+**Fully Automated Mode:**
+1. Choose from pre-configured strategies or create custom algorithms
+2. Set risk parameters and position sizing rules
+3. Enable the bot and monitor performance
+4. Receive notifications for significant events
 
 ### 3. Trader Tools
-Advanced analysis and trading utilities.
-- Technical analysis charts with 50+ indicators
-- Market depth and order book visualization
-- Trade journal and performance analytics
-- Alert system for price movements and signals
+
+- **Technical Analysis**: Access 50+ indicators with customizable parameters
+- **Backtesting**: Test strategies against historical data
+- **Alert System**: Set price alerts and strategy triggers
+- **Tax Calculator**: Estimate tax liabilities based on trading activity
 
 ### 4. Markets
-Comprehensive market data and analysis.
-- Real-time price feeds for all major cryptocurrencies
-- Indian exchange rates (INR pairs)
-- Market sentiment indicators
-- News aggregation and analysis
-- Exchange comparison tools
+
+- View real-time prices for all supported INR pairs
+- Analyze order books and trading volume
+- Compare prices across different Indian exchanges
+- Access market sentiment indicators
 
 ## Contact
 
-**Developer**: Saumya Sanghvi  
-**GitHub**: [@saumyasanghvi03](https://github.com/saumyasanghvi03)  
 **Project Repository**: [Aethos - BlockVista Terminal](https://github.com/saumyasanghvi03/Aethos)
 
 For bug reports, feature requests, or contributions, please open an issue on GitHub.
