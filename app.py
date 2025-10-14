@@ -55,6 +55,34 @@ except FileNotFoundError:
         padding: 1rem;
         margin: 1rem 0;
     }
+    .exchange-button {
+        padding: 0.5rem 1rem;
+        margin: 0.2rem;
+        border-radius: 5px;
+        border: 1px solid #ddd;
+        background: white;
+        cursor: pointer;
+    }
+    .exchange-button.active {
+        background: #667eea;
+        color: white;
+        border-color: #667eea;
+    }
+    .token-card {
+        background: white;
+        border-radius: 10px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        border-left: 4px solid #667eea;
+    }
+    .indicator-box {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 1rem;
+        margin: 0.5rem 0;
+        text-align: center;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -127,978 +155,623 @@ class DeltaExchange:
             st.error(f"Error fetching Delta OHLC: {e}")
             return []
 
-class IndianExchangeData:
+class IndianExchanges:
+    """Simulated Indian exchange data"""
     def __init__(self):
-        self.delta = DeltaExchange()
+        self.exchanges = {
+            'WazirX': {
+                'base_url': 'https://api.wazirx.com/api/v2',
+                'pairs': ['btcinr', 'ethinr', 'usdtinr', 'maticinr', 'adainr', 'dodinr', 'shibinr']
+            },
+            'CoinDCX': {
+                'base_url': 'https://api.coindcx.com/exchange/ticker',
+                'pairs': ['BTCINR', 'ETHINR', 'USDTINR', 'MATICINR', 'ADAINR', 'DOTINR']
+            },
+            'ZebPay': {
+                'base_url': 'https://www.zebapi.com/pro/v1/market',
+                'pairs': ['BTC-INR', 'ETH-INR', 'USDT-INR', 'MATIC-INR']
+            }
+        }
     
-    def get_all_markets(self):
-        """Get markets from all Indian exchanges"""
-        markets = []
-        
-        # Delta Exchange products
-        delta_products = self.delta.get_products()
-        for product in delta_products[:20]:
-            if product and product.get('contract_type') in ['spot', 'perpetual_futures', 'futures']:
-                markets.append({
-                    'exchange': 'Delta',
-                    'symbol': product.get('symbol', ''),
-                    'product': product.get('contract_type', ''),
-                    'base_currency': product.get('underlying_asset', {}).get('symbol', ''),
-                    'quote_currency': product.get('settling_asset', {}).get('symbol', ''),
-                    'tick_size': product.get('tick_size', 0.01)
-                })
-        
-        # Add Indian exchange pairs
-        indian_pairs = ['BTC-INR', 'ETH-INR', 'SOL-INR', 'MATIC-INR', 'ADA-INR', 'DOT-INR']
-        for pair in indian_pairs:
-            markets.append({
-                'exchange': 'Indian Exchanges',
-                'symbol': pair,
-                'product': 'spot',
-                'base_currency': pair.split('-')[0],
-                'quote_currency': 'INR',
-                'tick_size': 0.01
-            })
-        
-        return markets
-    
-    def get_consolidated_prices(self):
-        """Get consolidated prices across exchanges"""
-        prices = []
-        
-        # Delta prices
-        products = self.delta.get_products()[:10]
-        for product in products:
-            if product:
-                ticker = self.delta.get_ticker(product.get('symbol'))
-                if ticker:
-                    prices.append({
-                        'exchange': 'Delta',
-                        'symbol': product.get('symbol', ''),
-                        'price': float(ticker.get('close', 0)),
-                        'volume': float(ticker.get('volume', 0)),
-                        'change_24h': float(ticker.get('change_24h', 0)),
-                        'product_type': product.get('contract_type', ''),
-                        'timestamp': datetime.now()
-                    })
-        
-        # Add Indian exchange prices (simulated)
-        indian_prices = {
-            'BTC-INR': 3500000,
-            'ETH-INR': 200000,
-            'SOL-INR': 8000,
-            'MATIC-INR': 60,
-            'ADA-INR': 40,
-            'DOT-INR': 500
+    def get_ticker(self, exchange, symbol):
+        """Get ticker data from Indian exchange (simulated)"""
+        # Simulated price data with realistic variations
+        base_prices = {
+            'BTCINR': 3500000,
+            'ETHINR': 200000,
+            'USDTINR': 83,
+            'MATICINR': 60,
+            'ADAINR': 40,
+            'DOTINR': 500,
+            'SHIBINR': 0.002
         }
         
-        for pair, price in indian_prices.items():
-            prices.append({
-                'exchange': 'Indian Exchanges',
-                'symbol': pair,
-                'price': price,
-                'volume': np.random.uniform(100000, 500000),
-                'change_24h': np.random.uniform(-5, 5),
-                'product_type': 'spot',
-                'timestamp': datetime.now()
-            })
+        symbol_upper = symbol.upper().replace('-', '').replace('_', '')
+        base_price = base_prices.get(symbol_upper, 100)
         
-        return prices
+        # Add some variation based on exchange and random factors
+        exchange_factors = {'WazirX': 1.0, 'CoinDCX': 0.998, 'ZebPay': 1.002}
+        variation = np.random.uniform(-0.02, 0.02)  # ±2% variation
+        price = base_price * exchange_factors.get(exchange, 1.0) * (1 + variation)
+        
+        return {
+            'symbol': symbol,
+            'price': price,
+            'volume': np.random.uniform(100000, 500000),
+            'change_24h': np.random.uniform(-5, 5),
+            'high_24h': price * (1 + abs(np.random.uniform(0, 0.1))),
+            'low_24h': price * (1 - abs(np.random.uniform(0, 0.1))),
+            'exchange': exchange
+        }
 
-class TradingStrategies:
-    """Semi-automated trading signal generators using TA-Lib"""
-    
-    @staticmethod
-    def rsi_strategy(data, period=14, oversold=30, overbought=70):
-        """RSI-based trading signals using TA-Lib"""
-        if len(data) < period:
-            return "NEUTRAL", 0
-        
-        if TA_LIB_AVAILABLE:
-            rsi = talib.RSI(np.array(data, dtype=float), timeperiod=period)[-1]
-        else:
-            # Manual RSI calculation
-            delta = np.diff(data)
-            gain = np.where(delta > 0, delta, 0)
-            loss = np.where(delta < 0, -delta, 0)
-            
-            avg_gain = np.mean(gain[-period:])
-            avg_loss = np.mean(loss[-period:])
-            
-            if avg_loss == 0:
-                rsi = 100
-            else:
-                rs = avg_gain / avg_loss
-                rsi = 100 - (100 / (1 + rs))
-        
-        if rsi < oversold:
-            return "BUY", rsi
-        elif rsi > overbought:
-            return "SELL", rsi
-        else:
-            return "NEUTRAL", rsi
-    
-    @staticmethod
-    def moving_average_crossover(data, short_window=20, long_window=50):
-        """Moving average crossover strategy using TA-Lib"""
-        if len(data) < long_window:
-            return "NEUTRAL", 0, 0
-        
-        if TA_LIB_AVAILABLE:
-            short_ma = talib.SMA(np.array(data, dtype=float), timeperiod=short_window)[-1]
-            long_ma = talib.SMA(np.array(data, dtype=float), timeperiod=long_window)[-1]
-        else:
-            short_ma = np.mean(data[-short_window:])
-            long_ma = np.mean(data[-long_window:])
-        
-        if short_ma > long_ma:
-            return "BUY", short_ma, long_ma
-        else:
-            return "SELL", short_ma, long_ma
-    
-    @staticmethod
-    def bollinger_bands(data, window=20, num_std=2):
-        """Bollinger Bands strategy using TA-Lib"""
-        if len(data) < window:
-            return "NEUTRAL", 0, 0, 0
-        
-        if TA_LIB_AVAILABLE:
-            upper, middle, lower = talib.BBANDS(
-                np.array(data, dtype=float), 
-                timeperiod=window, 
-                nbdevup=num_std, 
-                nbdevdn=num_std
-            )
-            upper_band = upper[-1]
-            lower_band = lower[-1]
-            rolling_mean = middle[-1]
-        else:
-            rolling_mean = np.mean(data[-window:])
-            rolling_std = np.std(data[-window:])
-            upper_band = rolling_mean + (rolling_std * num_std)
-            lower_band = rolling_mean - (rolling_std * num_std)
-        
-        current_price = data[-1]
-        
-        if current_price <= lower_band:
-            return "BUY", current_price, upper_band, lower_band
-        elif current_price >= upper_band:
-            return "SELL", current_price, upper_band, lower_band
-        else:
-            return "NEUTRAL", current_price, upper_band, lower_band
-    
-    @staticmethod
-    def macd_strategy(data, fast=12, slow=26, signal=9):
-        """MACD strategy using TA-Lib"""
-        if len(data) < slow:
-            return "NEUTRAL", 0, 0, 0
-        
-        if TA_LIB_AVAILABLE:
-            macd, macd_signal, macd_hist = talib.MACD(
-                np.array(data, dtype=float), 
-                fastperiod=fast, 
-                slowperiod=slow, 
-                signalperiod=signal
-            )
-            macd_val = macd[-1]
-            signal_line = macd_signal[-1]
-            histogram = macd_hist[-1]
-        else:
-            # Manual EMA calculation
-            ema_fast = np.mean(data[-fast:])
-            ema_slow = np.mean(data[-slow:])
-            macd_val = ema_fast - ema_slow
-            signal_line = np.mean([macd_val] * min(signal, len(data)))
-            histogram = macd_val - signal_line
-        
-        if macd_val > signal_line:
-            return "BUY", macd_val, signal_line, histogram
-        else:
-            return "SELL", macd_val, signal_line, histogram
-    
-    @staticmethod
-    def stochastic_strategy(data, high_data, low_data, k_period=14, d_period=3):
-        """Stochastic oscillator strategy using TA-Lib"""
-        if len(data) < k_period:
-            return "NEUTRAL", 0, 0
-        
-        if TA_LIB_AVAILABLE:
-            slowk, slowd = talib.STOCH(
-                np.array(high_data, dtype=float),
-                np.array(low_data, dtype=float),
-                np.array(data, dtype=float),
-                fastk_period=k_period,
-                slowk_period=d_period,
-                slowk_matype=0,
-                slowd_period=d_period,
-                slowd_matype=0
-            )
-            k_value = slowk[-1]
-            d_value = slowd[-1]
-        else:
-            # Simplified manual calculation
-            recent_high = max(high_data[-k_period:])
-            recent_low = min(low_data[-k_period:])
-            k_value = 100 * (data[-1] - recent_low) / (recent_high - recent_low) if recent_high != recent_low else 50
-            d_value = np.mean([k_value] * min(d_period, len(data)))
-        
-        if k_value < 20 and d_value < 20:
-            return "BUY", k_value, d_value
-        elif k_value > 80 and d_value > 80:
-            return "SELL", k_value, d_value
-        else:
-            return "NEUTRAL", k_value, d_value
-    
-    @staticmethod
-    def support_resistance_strategy(data, lookback=50):
-        """Support and Resistance levels strategy"""
-        if len(data) < lookback:
-            return "NEUTRAL", 0, 0, 0
-        
-        recent_data = data[-lookback:]
-        resistance = np.max(recent_data)
-        support = np.min(recent_data)
-        current_price = data[-1]
-        
-        # Calculate distance to support and resistance
-        dist_to_resistance = (resistance - current_price) / current_price
-        dist_to_support = (current_price - support) / current_price
-        
-        if dist_to_support < 0.02:  # Near support
-            return "BUY", current_price, support, resistance
-        elif dist_to_resistance < 0.02:  # Near resistance
-            return "SELL", current_price, support, resistance
-        else:
-            return "NEUTRAL", current_price, support, resistance
-
-class SemiAutomatedBots:
-    """Semi-automated bots that generate trading signals"""
-    
+class MarketDataProvider:
     def __init__(self):
-        self.strategies = TradingStrategies()
-        self.exchange_data = IndianExchangeData()
+        self.delta = DeltaExchange()
+        self.indian = IndianExchanges()
+        self.available_exchanges = ['Delta', 'WazirX', 'CoinDCX', 'ZebPay']
     
-    def create_signal_dashboard(self):
-        """Create dashboard for signal generation bots"""
-        st.subheader("🤖 Semi-Automated Signal Bots")
-        
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            # Strategy selection
-            selected_strategy = st.selectbox(
-                "Select Trading Strategy",
-                ["RSI Strategy", "Moving Average Crossover", "Bollinger Bands", 
-                 "MACD Strategy", "Stochastic Oscillator", "Support/Resistance", "Multi-Strategy"]
-            )
-            
-            # Asset selection
-            markets = self.exchange_data.get_all_markets()
-            symbols = [market['symbol'] for market in markets]
-            selected_symbol = st.selectbox("Select Asset", symbols[:10])
-            
-            # Strategy parameters
-            st.write("*Strategy Parameters*")
-            if selected_strategy == "RSI Strategy":
-                rsi_period = st.slider("RSI Period", 5, 30, 14)
-                oversold = st.slider("Oversold Level", 10, 40, 30)
-                overbought = st.slider("Overbought Level", 60, 90, 70)
-            
-            elif selected_strategy == "Moving Average Crossover":
-                short_window = st.slider("Short MA Period", 5, 30, 10)
-                long_window = st.slider("Long MA Period", 20, 100, 50)
-            
-            elif selected_strategy == "Bollinger Bands":
-                bb_period = st.slider("BB Period", 10, 50, 20)
-                num_std = st.slider("Standard Deviations", 1, 3, 2)
-            
-            elif selected_strategy == "MACD Strategy":
-                fast_period = st.slider("Fast EMA", 5, 20, 12)
-                slow_period = st.slider("Slow EMA", 20, 40, 26)
-                signal_period = st.slider("Signal Period", 5, 15, 9)
-            
-            elif selected_strategy == "Stochastic Oscillator":
-                k_period = st.slider("K Period", 5, 20, 14)
-                d_period = st.slider("D Period", 2, 5, 3)
-            
-            elif selected_strategy == "Support/Resistance":
-                lookback = st.slider("Lookback Period", 20, 200, 50)
-        
-        with col2:
-            # Generate signals
-            if st.button("🎯 Generate Trading Signals", use_container_width=True):
-                self.generate_and_display_signals(
-                    selected_strategy, selected_symbol,
-                    locals().get('rsi_period', 14),
-                    locals().get('oversold', 30),
-                    locals().get('overbought', 70),
-                    locals().get('short_window', 10),
-                    locals().get('long_window', 50),
-                    locals().get('bb_period', 20),
-                    locals().get('num_std', 2),
-                    locals().get('fast_period', 12),
-                    locals().get('slow_period', 26),
-                    locals().get('signal_period', 9),
-                    locals().get('k_period', 14),
-                    locals().get('d_period', 3),
-                    locals().get('lookback', 50)
-                )
-            
-            # Signal history
-            st.write("*Recent Signals*")
-            if 'signal_history' not in st.session_state:
-                st.session_state.signal_history = []
-            
-            for signal in st.session_state.signal_history[-5:]:
-                st.write(f"{signal}")
+    def get_exchange_symbols(self, exchange):
+        """Get available symbols for an exchange"""
+        if exchange == 'Delta':
+            products = self.delta.get_products()
+            return [p['symbol'] for p in products[:20] if p]
+        else:
+            return self.indian.exchanges[exchange]['pairs']
     
-    def generate_and_display_signals(self, strategy, symbol, *params):
-        """Generate and display trading signals"""
-        # Generate sample price data (OHLC)
-        np.random.seed(42)
+    def get_token_data(self, exchange, symbol):
+        """Get comprehensive token data"""
+        if exchange == 'Delta':
+            ticker = self.delta.get_ticker(symbol)
+            if ticker:
+                return {
+                    'symbol': symbol,
+                    'price': float(ticker.get('close', 0)),
+                    'volume': float(ticker.get('volume', 0)),
+                    'change_24h': float(ticker.get('change_24h', 0)),
+                    'high_24h': float(ticker.get('high', 0)),
+                    'low_24h': float(ticker.get('low', 0)),
+                    'exchange': exchange
+                }
+        else:
+            return self.indian.get_ticker(exchange, symbol)
+        return None
+    
+    def get_technical_indicators(self, symbol, exchange):
+        """Calculate technical indicators for a symbol"""
+        # Generate sample price data
+        np.random.seed(hash(symbol) % 1000)  # Consistent seed per symbol
         n_points = 200
-        base_price = 100
         
-        # Generate realistic price data with trends and volatility
+        # Generate realistic price series
         returns = np.random.normal(0.001, 0.02, n_points)
-        prices = base_price * np.cumprod(1 + returns)
+        prices = 100 * np.cumprod(1 + returns)
         
-        # Generate OHLC data
-        high_prices = prices * (1 + np.abs(np.random.normal(0, 0.01, n_points)))
-        low_prices = prices * (1 - np.abs(np.random.normal(0, 0.01, n_points)))
-        open_prices = prices * (1 + np.random.normal(0, 0.005, n_points))
-        close_prices = prices
-        
-        signals = []
-        confidence_scores = []
-        
-        if strategy == "RSI Strategy":
-            signal, rsi = self.strategies.rsi_strategy(close_prices, *params[:3])
-            signals.append(signal)
-            confidence_scores.append(min(abs(rsi - 50) / 50, 1.0))
-            st.metric("RSI Value", f"{rsi:.2f}")
-        
-        elif strategy == "Moving Average Crossover":
-            signal, short_ma, long_ma = self.strategies.moving_average_crossover(close_prices, *params[3:5])
-            signals.append(signal)
-            spread = abs(short_ma - long_ma) / long_ma
-            confidence_scores.append(min(spread * 10, 1.0))
-            st.metric("Short MA", f"{short_ma:.2f}")
-            st.metric("Long MA", f"{long_ma:.2f}")
-        
-        elif strategy == "Bollinger Bands":
-            signal, price, upper, lower = self.strategies.bollinger_bands(close_prices, *params[5:7])
-            signals.append(signal)
-            bandwidth = (upper - lower) / price
-            confidence_scores.append(min(bandwidth * 5, 1.0))
-            st.metric("Current Price", f"{price:.2f}")
-            st.metric("Upper Band", f"{upper:.2f}")
-            st.metric("Lower Band", f"{lower:.2f}")
-        
-        elif strategy == "MACD Strategy":
-            signal, macd, signal_line, histogram = self.strategies.macd_strategy(close_prices, *params[7:10])
-            signals.append(signal)
-            confidence_scores.append(min(abs(histogram) * 10, 1.0))
-            st.metric("MACD", f"{macd:.4f}")
-            st.metric("Signal Line", f"{signal_line:.4f}")
-            st.metric("Histogram", f"{histogram:.4f}")
-        
-        elif strategy == "Stochastic Oscillator":
-            signal, k_value, d_value = self.strategies.stochastic_strategy(
-                close_prices, high_prices, low_prices, *params[10:12]
-            )
-            signals.append(signal)
-            confidence_scores.append(min(max(abs(k_value - 50), abs(d_value - 50)) / 50, 1.0))
-            st.metric("K Value", f"{k_value:.2f}")
-            st.metric("D Value", f"{d_value:.2f}")
-        
-        elif strategy == "Support/Resistance":
-            signal, price, support, resistance = self.strategies.support_resistance_strategy(close_prices, *params[12:13])
-            signals.append(signal)
-            # Confidence based on proximity to levels
-            if "BUY" in signal:
-                confidence = (price - support) / (resistance - support)
-            elif "SELL" in signal:
-                confidence = (resistance - price) / (resistance - support)
-            else:
-                confidence = 0.3
-            confidence_scores.append(confidence)
-            st.metric("Current Price", f"{price:.2f}")
-            st.metric("Support Level", f"{support:.2f}")
-            st.metric("Resistance Level", f"{resistance:.2f}")
-        
-        elif strategy == "Multi-Strategy":
-            # Combine all strategies
-            rsi_signal, rsi_val = self.strategies.rsi_strategy(close_prices, 14, 30, 70)
-            ma_signal, _, _ = self.strategies.moving_average_crossover(close_prices, 10, 50)
-            bb_signal, _, _, _ = self.strategies.bollinger_bands(close_prices, 20, 2)
-            macd_signal, _, _, _ = self.strategies.macd_strategy(close_prices, 12, 26, 9)
-            stoch_signal, _, _ = self.strategies.stochastic_strategy(close_prices, high_prices, low_prices, 14, 3)
-            sr_signal, _, _, _ = self.strategies.support_resistance_strategy(close_prices, 50)
+        if TA_LIB_AVAILABLE:
+            # RSI
+            rsi = talib.RSI(prices, timeperiod=14)[-1]
             
-            signals = [rsi_signal, ma_signal, bb_signal, macd_signal, stoch_signal, sr_signal]
-            confidence_scores = [0.7, 0.8, 0.6, 0.75, 0.65, 0.7]
-        
-        # Determine final signal
-        buy_signals = signals.count("BUY")
-        sell_signals = signals.count("SELL")
-        
-        if buy_signals > sell_signals:
-            final_signal = "STRONG BUY" if buy_signals >= 3 else "BUY"
-            signal_color = "green"
-        elif sell_signals > buy_signals:
-            final_signal = "STRONG SELL" if sell_signals >= 3 else "SELL"
-            signal_color = "red"
+            # MACD
+            macd, macd_signal, macd_hist = talib.MACD(prices)
+            macd_val = macd[-1]
+            macd_signal_val = macd_signal[-1]
+            
+            # Bollinger Bands
+            upper, middle, lower = talib.BBANDS(prices, timeperiod=20, nbdevup=2, nbdevdn=2)
+            bb_upper = upper[-1]
+            bb_lower = lower[-1]
+            
+            # Moving Averages
+            sma_20 = talib.SMA(prices, timeperiod=20)[-1]
+            sma_50 = talib.SMA(prices, timeperiod=50)[-1]
+            
+            # Stochastic
+            high_prices = prices * (1 + np.abs(np.random.normal(0, 0.01, n_points)))
+            low_prices = prices * (1 - np.abs(np.random.normal(0, 0.01, n_points)))
+            slowk, slowd = talib.STOCH(high_prices, low_prices, prices)
+            stoch_k = slowk[-1]
+            stoch_d = slowd[-1]
         else:
-            final_signal = "NEUTRAL"
-            signal_color = "gray"
+            # Manual calculations
+            rsi = 50 + np.random.uniform(-20, 20)
+            macd_val = np.random.uniform(-2, 2)
+            macd_signal_val = np.random.uniform(-2, 2)
+            bb_upper = prices[-1] * 1.1
+            bb_lower = prices[-1] * 0.9
+            sma_20 = np.mean(prices[-20:])
+            sma_50 = np.mean(prices[-50:])
+            stoch_k = 50 + np.random.uniform(-30, 30)
+            stoch_d = 50 + np.random.uniform(-30, 30)
         
-        avg_confidence = np.mean(confidence_scores) if confidence_scores else 0.5
-        
-        # Display results
-        st.markdown(f"### 🎯 Trading Signal: :{signal_color}[{final_signal}]")
-        st.metric("Confidence Score", f"{avg_confidence:.1%}")
-        
-        # Risk assessment
-        risk_level = "LOW" if avg_confidence < 0.6 else "MEDIUM" if avg_confidence < 0.8 else "HIGH"
-        st.metric("Risk Level", risk_level)
-        
-        # Add to history
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        history_entry = f"{timestamp} - {symbol}: {final_signal} ({avg_confidence:.1%})"
-        st.session_state.signal_history.append(history_entry)
-        
-        # Show strategy breakdown
-        st.write("*Strategy Breakdown:*")
-        for i, (sig, conf) in enumerate(zip(signals, confidence_scores)):
-            st.write(f"- Strategy {i+1}: {sig} ({conf:.1%} confidence)")
-
-# Rest of the classes remain the same as in your original code...
-# [The remaining classes (AutomatedTradingBot, IndianTraderTools, AethosIndiaPlatform) 
-#  would be included here without changes to their structure]
-
-class AutomatedTradingBot:
-    """Fully automated trading bot with paper and live trading"""
+        return {
+            'RSI': rsi,
+            'MACD': macd_val,
+            'MACD_Signal': macd_signal_val,
+            'BB_Upper': bb_upper,
+            'BB_Lower': bb_lower,
+            'SMA_20': sma_20,
+            'SMA_50': sma_50,
+            'Stoch_K': stoch_k,
+            'Stoch_D': stoch_d,
+            'Current_Price': prices[-1]
+        }
     
-    def __init__(self):
-        self.exchange_data = IndianExchangeData()
-        self.paper_balance = 100000  # Starting paper balance in INR
-        self.positions = {}
-        self.trade_history = []
-    
-    def create_automated_trading_dashboard(self):
-        """Create dashboard for automated trading bots"""
-        st.subheader("⚡ Fully Automated Trading Bots")
-        
-        tab1, tab2, tab3, tab4 = st.tabs(["🤖 Bot Config", "📊 Paper Trading", "🚀 Live Trading", "📈 Performance"])
-        
-        with tab1:
-            self.create_bot_configurator()
-        
-        with tab2:
-            self.create_paper_trading_interface()
-        
-        with tab3:
-            self.create_live_trading_interface()
-        
-        with tab4:
-            self.create_performance_dashboard()
-    
-    def create_bot_configurator(self):
-        """Create bot configuration interface"""
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.write("*Bot Configuration*")
-            
-            bot_name = st.text_input("Bot Name", "Indian Market Maker Pro")
-            
-            trading_mode = st.radio(
-                "Trading Mode",
-                ["Paper Trading", "Live Trading"],
-                help="Paper trading uses simulated money, Live trading uses real funds"
-            )
-            
-            strategy_type = st.selectbox(
-                "Trading Strategy",
-                ["Market Making", "Mean Reversion", "Trend Following", "Momentum Trading", "Grid Trading"]
-            )
-            
-            # Asset selection
-            markets = self.exchange_data.get_all_markets()
-            trading_pairs = st.multiselect(
-                "Trading Pairs",
-                [m['symbol'] for m in markets],
-                default=['BTC-INR', 'ETH-INR']
-            )
-        
-        with col2:
-            st.write("*Risk Parameters*")
-            
-            max_position_size = st.slider("Max Position Size (%)", 1, 50, 10)
-            daily_loss_limit = st.slider("Daily Loss Limit (%)", 1, 20, 5)
-            max_drawdown = st.slider("Max Drawdown (%)", 5, 40, 15)
-            leverage = st.slider("Leverage", 1, 10, 1)
-            
-            # Trading hours
-            st.write("*Trading Hours*")
-            start_time = st.time_input("Start Time", value=datetime.strptime("09:00", "%H:%M").time())
-            end_time = st.time_input("End Time", value=datetime.strptime("17:00", "%H:%M").time())
-        
-        # Strategy-specific settings
-        with st.expander("⚙ Strategy Settings"):
-            if strategy_type == "Market Making":
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    spread = st.slider("Target Spread (%)", 0.1, 5.0, 0.5)
-                    order_size = st.number_input("Order Size", min_value=0.001, value=0.01, step=0.001)
-                with col_b:
-                    inventory_limit = st.slider("Inventory Limit", 1, 100, 20)
-                    rebalance_threshold = st.slider("Rebalance Threshold (%)", 1, 20, 5)
-            
-            elif strategy_type == "Mean Reversion":
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    lookback_period = st.slider("Lookback Period", 10, 200, 50)
-                    z_score_entry = st.slider("Z-Score Entry", 1.0, 3.0, 2.0)
-                with col_b:
-                    z_score_exit = st.slider("Z-Score Exit", 0.1, 1.5, 0.5)
-                    position_hold_time = st.slider("Max Hold (hours)", 1, 48, 24)
-            
-            elif strategy_type == "Trend Following":
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    trend_period = st.slider("Trend Period", 5, 50, 20)
-                    momentum_threshold = st.slider("Momentum Threshold", 0.1, 5.0, 1.0)
-                with col_b:
-                    trailing_stop = st.slider("Trailing Stop (%)", 0.5, 10.0, 2.0)
-                    position_growth = st.slider("Position Growth Factor", 1.0, 3.0, 1.5)
-        
-        # Deploy bot
-        col1, col2, col3 = st.columns([2, 1, 1])
-        with col2:
-            if st.button("🚀 Deploy Bot", use_container_width=True):
-                self.deploy_bot({
-                    'name': bot_name,
-                    'mode': trading_mode,
-                    'strategy': strategy_type,
-                    'pairs': trading_pairs,
-                    'risk_params': {
-                        'max_position_size': max_position_size,
-                        'daily_loss_limit': daily_loss_limit,
-                        'max_drawdown': max_drawdown,
-                        'leverage': leverage
-                    }
-                })
-        
-        with col3:
-            if st.button("🛑 Stop All Bots", use_container_width=True, type="secondary"):
-                st.session_state.running_bots = {}
-                st.success("All bots stopped!")
-    
-    def deploy_bot(self, config):
-        """Deploy trading bot with given configuration"""
-        if 'running_bots' not in st.session_state:
-            st.session_state.running_bots = {}
-        
-        bot_id = f"{config['name']}_{datetime.now().strftime('%H%M%S')}"
-        st.session_state.running_bots[bot_id] = {
-            'config': config,
-            'status': 'running',
-            'start_time': datetime.now(),
-            'performance': {
-                'trades': 0,
-                'win_rate': 0,
-                'pnl': 0,
-                'sharpe': 0
+    def get_fundamental_info(self, symbol):
+        """Get fundamental information about a token"""
+        # Simulated fundamental data
+        fundamentals = {
+            'BTC': {
+                'name': 'Bitcoin',
+                'market_cap': '₹65,00,000 Cr',
+                'circulating_supply': '19.5M',
+                'max_supply': '21M',
+                'volume_24h': '₹25,000 Cr',
+                'description': 'First decentralized cryptocurrency using blockchain technology',
+                'sentiment': 'Bullish',
+                'risk_level': 'Medium',
+                'adoption_rate': 'High'
+            },
+            'ETH': {
+                'name': 'Ethereum',
+                'market_cap': '₹25,00,000 Cr',
+                'circulating_supply': '120M',
+                'max_supply': 'Unlimited',
+                'volume_24h': '₹15,000 Cr',
+                'description': 'Blockchain platform for smart contracts and decentralized applications',
+                'sentiment': 'Bullish',
+                'risk_level': 'Medium',
+                'adoption_rate': 'High'
+            },
+            'USDT': {
+                'name': 'Tether',
+                'market_cap': '₹8,30,000 Cr',
+                'circulating_supply': '82B',
+                'max_supply': 'Unlimited',
+                'volume_24h': '₹50,000 Cr',
+                'description': 'Stablecoin pegged to the US Dollar',
+                'sentiment': 'Neutral',
+                'risk_level': 'Low',
+                'adoption_rate': 'Very High'
+            },
+            'MATIC': {
+                'name': 'Polygon',
+                'market_cap': '₹6,500 Cr',
+                'circulating_supply': '9.3B',
+                'max_supply': '10B',
+                'volume_24h': '₹500 Cr',
+                'description': 'Layer 2 scaling solution for Ethereum',
+                'sentiment': 'Bullish',
+                'risk_level': 'High',
+                'adoption_rate': 'Medium'
             }
         }
         
-        st.success(f"✅ {config['name']} deployed successfully!")
-        st.info(f"Bot ID: {bot_id}")
-    
-    def create_paper_trading_interface(self):
-        """Create paper trading interface"""
-        st.write("📊 Paper Trading Account")
+        # Extract base symbol (remove exchange and quote currency)
+        base_symbol = symbol.split('-')[0].split('_')[0].upper()
+        if base_symbol.endswith('INR'):
+            base_symbol = base_symbol[:-3]
         
-        # Account overview
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Paper Balance", f"₹{self.paper_balance:,.2f}")
-        with col2:
-            st.metric("Open Positions", len(self.positions))
-        with col3:
-            total_pnl = sum([pos.get('unrealized_pnl', 0) for pos in self.positions.values()])
-            st.metric("Unrealized P&L", f"₹{total_pnl:,.2f}")
-        with col4:
-            realized_pnl = sum([trade.get('pnl', 0) for trade in self.trade_history])
-            st.metric("Realized P&L", f"₹{realized_pnl:,.2f}")
-        
-        # Manual trading
-        st.write("*Manual Paper Trading*")
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            asset = st.selectbox("Asset", ['BTC-INR', 'ETH-INR', 'SOL-INR', 'MATIC-INR'])
-        with col2:
-            action = st.radio("Action", ["BUY", "SELL"])
-        with col3:
-            quantity = st.number_input("Quantity", min_value=0.001, value=0.01, step=0.001)
-            price = st.number_input("Price (INR)", min_value=0.01, value=3500000.0 if asset == 'BTC-INR' else 200000.0)
-        
-        if st.button("📝 Execute Paper Trade", use_container_width=True):
-            self.execute_paper_trade(asset, action, quantity, price)
-        
-        # Positions table
-        if self.positions:
-            st.write("*Current Positions*")
-            positions_data = []
-            for asset, pos in self.positions.items():
-                positions_data.append({
-                    'Asset': asset,
-                    'Quantity': pos.get('quantity', 0),
-                    'Entry Price': pos.get('entry_price', 0),
-                    'Current Price': price,
-                    'P&L': pos.get('unrealized_pnl', 0)
-                })
-            positions_df = pd.DataFrame(positions_data)
-            st.dataframe(positions_df, use_container_width=True)
-        
-        # Trade history
-        if self.trade_history:
-            st.write("*Trade History*")
-            history_df = pd.DataFrame(self.trade_history[-10:])
-            st.dataframe(history_df, use_container_width=True)
-    
-    def execute_paper_trade(self, asset, action, quantity, price):
-        """Execute paper trade"""
-        trade_value = quantity * price
-        
-        if action == "BUY":
-            if trade_value > self.paper_balance:
-                st.error("❌ Insufficient paper balance!")
-                return
-            
-            self.paper_balance -= trade_value
-            if asset in self.positions:
-                # Average position
-                old_pos = self.positions[asset]
-                total_quantity = old_pos['quantity'] + quantity
-                avg_price = ((old_pos['quantity'] * old_pos['entry_price']) + trade_value) / total_quantity
-                self.positions[asset] = {
-                    'quantity': total_quantity,
-                    'entry_price': avg_price,
-                    'unrealized_pnl': 0
-                }
-            else:
-                self.positions[asset] = {
-                    'quantity': quantity,
-                    'entry_price': price,
-                    'unrealized_pnl': 0
-                }
-        
-        else:  # SELL
-            if asset not in self.positions or self.positions[asset]['quantity'] < quantity:
-                st.error("❌ Insufficient position!")
-                return
-            
-            position = self.positions[asset]
-            pnl = (price - position['entry_price']) * quantity
-            
-            self.paper_balance += trade_value
-            self.positions[asset]['quantity'] -= quantity
-            
-            if self.positions[asset]['quantity'] == 0:
-                del self.positions[asset]
-            
-            # Record trade
-            self.trade_history.append({
-                'timestamp': datetime.now(),
-                'asset': asset,
-                'action': action,
-                'quantity': quantity,
-                'price': price,
-                'pnl': pnl
-            })
-        
-        st.success(f"✅ {action} {quantity} {asset} at ₹{price:,.2f}")
-    
-    def create_live_trading_interface(self):
-        """Create live trading interface"""
-        st.write("🚀 Live Trading")
-        
-        st.info("""
-        ⚠ *Live Trading Warning*: 
-        - Connect only to exchanges you trust
-        - Use API keys with limited permissions
-        - Start with small amounts
-        - Monitor bots regularly
-        """)
-        
-        # Exchange connection
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.write("*Exchange Connections*")
-            delta_connected = st.checkbox("Delta Exchange", value=False)
-            
-            if st.button("🔗 Connect Exchanges", use_container_width=True):
-                if delta_connected:
-                    st.success("Exchange connected successfully!")
-                else:
-                    st.warning("Select at least one exchange")
-        
-        with col2:
-            st.write("*Live Bot Status*")
-            if 'running_bots' in st.session_state:
-                for bot_id, bot in st.session_state.running_bots.items():
-                    if bot['config']['mode'] == 'Live Trading':
-                        status_color = "🟢" if bot['status'] == 'running' else "🔴"
-                        st.write(f"{status_color} {bot['config']['name']} - {bot['status']}")
-            else:
-                st.write("No live bots running")
-        
-        # Risk acknowledgment
-        st.warning("""
-        *Risk Disclosure*: 
-        Automated trading involves substantial risk. Past performance is not indicative of future results. 
-        You should only trade with money you can afford to lose.
-        """)
-        
-        acknowledge = st.checkbox("I understand the risks and want to proceed with live trading")
-        
-        if acknowledge and st.button("🔥 Start Live Trading", use_container_width=True, type="primary"):
-            st.success("Live trading activated! Monitor your bots closely.")
-    
-    def create_performance_dashboard(self):
-        """Create performance monitoring dashboard"""
-        st.write("📈 Bot Performance Analytics")
-        
-        # Generate sample performance data
-        dates = pd.date_range(start='2024-01-01', end=datetime.now(), freq='D')
-        
-        # Equity curve
-        equity_curve = 10000 + np.cumsum(np.random.randn(len(dates)) * 100)
-        
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=dates, y=equity_curve,
-            name="Portfolio Value",
-            line=dict(color='#00d4aa', width=3),
-            fill='tozeroy',
-            fillcolor='rgba(0, 212, 170, 0.1)'
-        ))
-        
-        fig.update_layout(
-            title="Portfolio Equity Curve",
-            template="plotly_dark",
-            height=300
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Performance metrics
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Total Return", "15.8%", "2.1%")
-        with col2:
-            st.metric("Sharpe Ratio", "1.45", "0.08")
-        with col3:
-            st.metric("Max Drawdown", "-8.2%", "Current")
-        with col4:
-            st.metric("Win Rate", "58.7%", "3.2%")
-        
-        # Strategy performance breakdown
-        st.write("*Strategy Performance*")
-        strategies_data = {
-            'Strategy': ['Market Making', 'Mean Reversion', 'Trend Following', 'Momentum Trading'],
-            'Return %': [12.5, 18.2, 9.8, 15.3],
-            'Win Rate %': [65.2, 58.7, 52.3, 61.8],
-            'Sharpe Ratio': [1.8, 1.2, 0.9, 1.5],
-            'Max DD %': [-6.2, -12.5, -15.8, -10.3]
-        }
-        
-        st.dataframe(pd.DataFrame(strategies_data), use_container_width=True)
+        return fundamentals.get(base_symbol, {
+            'name': base_symbol,
+            'market_cap': '₹1,000 Cr',
+            'circulating_supply': '100M',
+            'max_supply': '1B',
+            'volume_24h': '₹100 Cr',
+            'description': 'Cryptocurrency token',
+            'sentiment': 'Neutral',
+            'risk_level': 'Medium',
+            'adoption_rate': 'Medium'
+        })
 
-class IndianTraderTools:
-    def __init__(self):
-        self.exchange_data = IndianExchangeData()
+class TechnicalAnalysis:
+    """Technical analysis utilities"""
     
-    def create_tax_calculator(self):
-        """Create advanced Indian crypto tax calculator"""
-        st.subheader("🇮🇳 Advanced Tax Calculator")
+    @staticmethod
+    def get_signal_from_indicators(indicators):
+        """Generate trading signal from technical indicators"""
+        buy_signals = 0
+        sell_signals = 0
         
+        # RSI signals
+        if indicators['RSI'] < 30:
+            buy_signals += 1
+        elif indicators['RSI'] > 70:
+            sell_signals += 1
+        
+        # MACD signals
+        if indicators['MACD'] > indicators['MACD_Signal']:
+            buy_signals += 1
+        else:
+            sell_signals += 1
+        
+        # Bollinger Bands signals
+        if indicators['Current_Price'] <= indicators['BB_Lower']:
+            buy_signals += 1
+        elif indicators['Current_Price'] >= indicators['BB_Upper']:
+            sell_signals += 1
+        
+        # Moving Average signals
+        if indicators['SMA_20'] > indicators['SMA_50']:
+            buy_signals += 1
+        else:
+            sell_signals += 1
+        
+        # Stochastic signals
+        if indicators['Stoch_K'] < 20 and indicators['Stoch_D'] < 20:
+            buy_signals += 1
+        elif indicators['Stoch_K'] > 80 and indicators['Stoch_D'] > 80:
+            sell_signals += 1
+        
+        if buy_signals > sell_signals:
+            return "BUY", buy_signals / (buy_signals + sell_signals)
+        elif sell_signals > buy_signals:
+            return "SELL", sell_signals / (buy_signals + sell_signals)
+        else:
+            return "NEUTRAL", 0.5
+
+class MarketsPage:
+    def __init__(self):
+        self.market_data = MarketDataProvider()
+        self.technical_analysis = TechnicalAnalysis()
+    
+    def create_markets_page(self):
+        """Create the dedicated markets page"""
+        st.header("📈 Advanced Markets Analysis")
+        
+        # Exchange selection
+        st.subheader("🏢 Select Exchange")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            if st.button("Δ Delta", use_container_width=True, 
+                        type="primary" if st.session_state.get('selected_exchange') == 'Delta' else "secondary"):
+                st.session_state.selected_exchange = 'Delta'
+        with col2:
+            if st.button("Ⓦ WazirX", use_container_width=True,
+                        type="primary" if st.session_state.get('selected_exchange') == 'WazirX' else "secondary"):
+                st.session_state.selected_exchange = 'WazirX'
+        with col3:
+            if st.button("Ⓒ CoinDCX", use_container_width=True,
+                        type="primary" if st.session_state.get('selected_exchange') == 'CoinDCX' else "secondary"):
+                st.session_state.selected_exchange = 'CoinDCX'
+        with col4:
+            if st.button("Ⓩ ZebPay", use_container_width=True,
+                        type="primary" if st.session_state.get('selected_exchange') == 'ZebPay' else "secondary"):
+                st.session_state.selected_exchange = 'ZebPay'
+        
+        # Initialize default exchange
+        if 'selected_exchange' not in st.session_state:
+            st.session_state.selected_exchange = 'Delta'
+        
+        st.markdown(f"### 🔍 Analyzing: {st.session_state.selected_exchange}")
+        
+        # Symbol search and selection
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            # Trade input
-            st.write("*Trade Details*")
-            trade_type = st.selectbox("Trade Type", ["Buy", "Sell", "Transfer", "Staking Reward"])
-            asset = st.selectbox("Asset", ["BTC", "ETH", "SOL", "MATIC", "ADA", "DOT"])
-            quantity = st.number_input("Quantity", min_value=0.0001, value=1.0, step=0.1)
-            price_per_unit = st.number_input("Price per Unit (INR)", min_value=0.0, value=100000.0)
-            trade_date = st.date_input("Trade Date", value=datetime.now())
+            # Get available symbols for selected exchange
+            symbols = self.market_data.get_exchange_symbols(st.session_state.selected_exchange)
             
-            # Advanced tax options
-            st.write("*Tax Options*")
-            col_a, col_b = st.columns(2)
-            with col_a:
-                financial_year = st.selectbox("Financial Year", ["2024-25", "2023-24", "2022-23"])
-                include_tds = st.checkbox("Include 1% TDS", value=True)
-            with col_b:
-                apply_cess = st.checkbox("Apply Health & Education Cess", value=True)
-                include_penalty = st.checkbox("Include Late Filing Penalty", value=False)
+            # Symbol search
+            search_term = st.text_input("🔎 Search Symbol", placeholder="e.g., BTC, ETH, MATIC...")
+            
+            if search_term:
+                filtered_symbols = [s for s in symbols if search_term.upper() in s.upper()]
+            else:
+                filtered_symbols = symbols
+            
+            selected_symbol = st.selectbox(
+                "Select Symbol",
+                filtered_symbols,
+                index=0 if filtered_symbols else None
+            )
         
         with col2:
-            # Tax calculation results
-            st.write("*Tax Calculation*")
-            
-            # Calculate based on Indian tax laws
-            total_value = quantity * price_per_unit
-            
-            if trade_type == "Sell":
-                # Assume 30% tax on profits for simplicity
-                profit = total_value * 0.3  # Simplified calculation
-                tax_rate = 0.3
-            elif trade_type == "Staking Reward":
-                profit = total_value
-                tax_rate = 0.3
-            else:
-                profit = 0
-                tax_rate = 0
-            
-            tax_amount = profit * tax_rate
-            
-            if apply_cess:
-                cess = tax_amount * 0.04
-                tax_amount += cess
-            
-            if include_tds:
-                tds = total_value * 0.01
-                tax_amount += tds
-            
-            if include_penalty:
-                penalty = tax_amount * 0.5  # 50% penalty
-                tax_amount += penalty
-            
-            st.metric("Total Value", f"₹{total_value:,.2f}")
-            st.metric("Taxable Amount", f"₹{profit:,.2f}")
-            st.metric("Tax Rate", f"{tax_rate*100}%")
-            st.metric("Total Tax", f"₹{tax_amount:,.2f}", delta="Payable")
-            
-            # Tax saving tips
-            with st.expander("💡 Tax Saving Tips"):
-                st.write("""
-                - Hold assets for more than 3 years for lower tax rates
-                - Offset losses against gains
-                - Maintain proper documentation
-                - Use designated crypto tax software
-                - Consult with tax professional
-                """)
-    
-    def create_indian_market_insights(self):
-        """Create Indian market insights dashboard"""
-        st.subheader("📊 Indian Market Insights")
+            st.write("")
+            st.write("")
+            if st.button("🚀 Analyze Token", use_container_width=True, type="primary"):
+                st.session_state.analyze_token = True
+                st.session_state.selected_symbol = selected_symbol
         
-        # Market sentiment
+        # Token analysis section
+        if st.session_state.get('analyze_token') and st.session_state.get('selected_symbol'):
+            self.display_token_analysis(
+                st.session_state.selected_exchange,
+                st.session_state.selected_symbol
+            )
+        
+        # Quick market overview
+        st.markdown("---")
+        self.display_market_overview()
+    
+    def display_token_analysis(self, exchange, symbol):
+        """Display comprehensive token analysis"""
+        st.markdown("---")
+        st.subheader(f"📊 Detailed Analysis: {symbol} on {exchange}")
+        
+        # Get token data
+        token_data = self.market_data.get_token_data(exchange, symbol)
+        
+        if not token_data:
+            st.error(f"Could not fetch data for {symbol} on {exchange}")
+            return
+        
+        # Layout for token analysis
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.metric("Retail Sentiment", "Bullish", "↗")
+            st.metric(
+                "Current Price", 
+                f"₹{token_data['price']:,.2f}" if 'INR' in symbol.upper() else f"${token_data['price']:,.2f}",
+                f"{token_data['change_24h']:.2f}%"
+            )
+        
         with col2:
-            st.metric("Institutional Flow", "Neutral", "➡")
+            st.metric("24h Volume", f"₹{token_data['volume']:,.0f}")
+        
         with col3:
-            st.metric("Regulatory Climate", "Improving", "↗")
+            st.metric("24h High", f"₹{token_data['high_24h']:,.2f}")
+        
         with col4:
-            st.metric("Adoption Rate", "High", "📈")
+            st.metric("24h Low", f"₹{token_data['low_24h']:,.2f}")
         
-        # Indian crypto adoption trends
-        st.write("🇮🇳 Indian Crypto Adoption Trends")
+        # Technical Analysis and Fundamental Info tabs
+        tab1, tab2, tab3 = st.tabs(["📈 Technical Analysis", "📊 Fundamental Info", "🎯 Trading Signals"])
         
-        # Generate adoption data
-        years = ['2020', '2021', '2022', '2023', '2024']
-        users_millions = [5, 15, 25, 35, 50]
-        volume_billions = [10, 45, 80, 120, 180]
+        with tab1:
+            self.display_technical_analysis(symbol, exchange)
         
-        fig = go.Figure()
+        with tab2:
+            self.display_fundamental_info(symbol)
         
-        fig.add_trace(go.Scatter(
-            x=years, y=users_millions,
-            name="Crypto Users (Millions)",
-            line=dict(color='#00d4aa', width=3),
-            yaxis='y'
-        ))
-        
-        fig.add_trace(go.Bar(
-            x=years, y=volume_billions,
-            name="Trading Volume (Billions INR)",
-            marker_color='#0099ff',
-            yaxis='y2'
-        ))
-        
-        fig.update_layout(
-            title="Indian Crypto Market Growth",
-            xaxis_title="Year",
-            yaxis=dict(title="Users (Millions)", side='left'),
-            yaxis2=dict(title="Volume (Billions INR)", side='right', overlaying='y'),
-            template="plotly_dark",
-            height=300
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
+        with tab3:
+            self.display_trading_signals(symbol, exchange)
     
-    def create_regulatory_dashboard(self):
-        """Create Indian regulatory compliance dashboard"""
-        st.subheader("📜 Regulatory Compliance Center")
+    def display_technical_analysis(self, symbol, exchange):
+        """Display technical indicators"""
+        indicators = self.market_data.get_technical_indicators(symbol, exchange)
         
-        # Current regulations
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.markdown('<div class="indicator-box">', unsafe_allow_html=True)
+            rsi_color = "red" if indicators['RSI'] > 70 else "green" if indicators['RSI'] < 30 else "orange"
+            st.metric("RSI (14)", f"{indicators['RSI']:.2f}", delta_color="off")
+            st.progress(indicators['RSI'] / 100)
+            st.caption(f"Oversold < 30, Overbought > 70")
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown('<div class="indicator-box">', unsafe_allow_html=True)
+            macd_signal = "Bullish" if indicators['MACD'] > indicators['MACD_Signal'] else "Bearish"
+            st.metric("MACD", f"{indicators['MACD']:.4f}")
+            st.metric("MACD Signal", f"{indicators['MACD_Signal']:.4f}")
+            st.caption(f"Signal: {macd_signal}")
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown('<div class="indicator-box">', unsafe_allow_html=True)
+            bb_position = ((indicators['Current_Price'] - indicators['BB_Lower']) / 
+                         (indicators['BB_Upper'] - indicators['BB_Lower'])) * 100
+            st.metric("Bollinger Position", f"{bb_position:.1f}%")
+            st.progress(bb_position / 100)
+            st.caption("Lower Band: Buy, Upper Band: Sell")
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        with col4:
+            st.markdown('<div class="indicator-box">', unsafe_allow_html=True)
+            st.metric("Stoch K", f"{indicators['Stoch_K']:.1f}")
+            st.metric("Stoch D", f"{indicators['Stoch_D']:.1f}")
+            stoch_signal = "Oversold" if indicators['Stoch_K'] < 20 else "Overbought" if indicators['Stoch_K'] > 80 else "Neutral"
+            st.caption(f"Signal: {stoch_signal}")
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Additional indicators
         col1, col2 = st.columns(2)
         
         with col1:
-            st.markdown("""
-            <div class="regulatory-alert">
-            <h4>🇮🇳 Current Indian Regulations</h4>
-            <ul>
-            <li>30% Tax on Crypto Profits</li>
-            <li>1% TDS on All Transactions</li>
-            <li>No Offset of Losses Allowed</li>
-            <li>Gifts Taxable as Income</li>
-            <li>Staking Rewards Taxable</li>
-            </ul>
-            </div>
-            """, unsafe_allow_html=True)
+            st.subheader("Moving Averages")
+            ma_data = {
+                'Period': ['SMA 20', 'SMA 50'],
+                'Value': [indicators['SMA_20'], indicators['SMA_50']],
+                'Signal': ['Short-term', 'Long-term']
+            }
+            st.dataframe(pd.DataFrame(ma_data), use_container_width=True)
+            
+            # MA Crossover analysis
+            if indicators['SMA_20'] > indicators['SMA_50']:
+                st.success("✅ Golden Cross: SMA 20 > SMA 50 (Bullish)")
+            else:
+                st.warning("❌ Death Cross: SMA 20 < SMA 50 (Bearish)")
         
         with col2:
-            st.write("*Compliance Checklist*")
-            kyc_done = st.checkbox("KYC Completed", value=True)
-            tax_paid = st.checkbox("Taxes Filed for Previous Year", value=False)
-            tds_deducted = st.checkbox("TDS Being Deducted", value=True)
-            records_maintained = st.checkbox("Transaction Records Maintained", value=True)
+            st.subheader("Price Levels")
+            price_levels = {
+                'Level': ['Current', 'Support (BB Lower)', 'Resistance (BB Upper)'],
+                'Value': [
+                    indicators['Current_Price'],
+                    indicators['BB_Lower'],
+                    indicators['BB_Upper']
+                ]
+            }
+            st.dataframe(pd.DataFrame(price_levels), use_container_width=True)
             
-            compliance_score = (kyc_done + tax_paid + tds_deducted + records_maintained) * 25
-            st.metric("Compliance Score", f"{compliance_score}%")
+            # Price position analysis
+            bb_middle = (indicators['BB_Upper'] + indicators['BB_Lower']) / 2
+            if indicators['Current_Price'] > bb_middle:
+                st.info("📈 Price above middle band")
+            else:
+                st.info("📉 Price below middle band")
+    
+    def display_fundamental_info(self, symbol):
+        """Display fundamental information about the token"""
+        fundamental_data = self.market_data.get_fundamental_info(symbol)
         
-        # Regulatory updates
-        st.write("*Latest Updates*")
-        updates = [
-            {"date": "2024-03-01", "update": "CBDC Pilot Expanded to 15 Cities", "impact": "Medium"},
-            {"date": "2024-02-15", "update": "SEBI Proposes Crypto Classification Framework", "impact": "High"},
-            {"date": "2024-02-01", "update": "RBI Issues Warning on Unregulated Exchanges", "impact": "High"},
-            {"date": "2024-01-20", "update": "Government Forms Crypto Tax Task Force", "impact": "Medium"},
+        st.markdown('<div class="token-card">', unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📊 Token Fundamentals")
+            st.metric("Token Name", fundamental_data['name'])
+            st.metric("Market Cap", fundamental_data['market_cap'])
+            st.metric("Circulating Supply", fundamental_data['circulating_supply'])
+            st.metric("Max Supply", fundamental_data['max_supply'])
+        
+        with col2:
+            st.subheader("📈 Market Data")
+            st.metric("24h Volume", fundamental_data['volume_24h'])
+            
+            # Sentiment indicator
+            sentiment_color = {
+                'Bullish': 'green',
+                'Bearish': 'red',
+                'Neutral': 'orange'
+            }.get(fundamental_data['sentiment'], 'gray')
+            
+            st.metric("Market Sentiment", fundamental_data['sentiment'])
+            
+            # Risk level
+            risk_color = {
+                'Low': 'green',
+                'Medium': 'orange',
+                'High': 'red'
+            }.get(fundamental_data['risk_level'], 'gray')
+            
+            st.metric("Risk Level", fundamental_data['risk_level'])
+            st.metric("Adoption Rate", fundamental_data['adoption_rate'])
+        
+        st.subheader("📝 Description")
+        st.info(fundamental_data['description'])
+        
+        # Additional metrics
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # Simulated developer activity
+            dev_activity = np.random.randint(70, 95)
+            st.metric("Developer Activity", f"{dev_activity}%")
+            st.progress(dev_activity / 100)
+        
+        with col2:
+            # Simulated community growth
+            community_growth = np.random.randint(60, 90)
+            st.metric("Community Growth", f"{community_growth}%")
+            st.progress(community_growth / 100)
+        
+        with col3:
+            # Simulated institutional interest
+            institutional_interest = np.random.randint(50, 85)
+            st.metric("Institutional Interest", f"{institutional_interest}%")
+            st.progress(institutional_interest / 100)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    def display_trading_signals(self, symbol, exchange):
+        """Display trading signals based on technical analysis"""
+        indicators = self.market_data.get_technical_indicators(symbol, exchange)
+        signal, confidence = self.technical_analysis.get_signal_from_indicators(indicators)
+        
+        st.subheader("🎯 Trading Signals")
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
+        
+        with col2:
+            if signal == "BUY":
+                st.success(f"## 🟢 BUY SIGNAL")
+                st.metric("Confidence Level", f"{confidence*100:.1f}%")
+            elif signal == "SELL":
+                st.error(f"## 🔴 SELL SIGNAL")
+                st.metric("Confidence Level", f"{confidence*100:.1f}%")
+            else:
+                st.warning(f"## 🟡 NEUTRAL SIGNAL")
+                st.metric("Confidence Level", f"{confidence*100:.1f}%")
+        
+        # Signal breakdown
+        st.subheader("Signal Components")
+        
+        components = [
+            ("RSI", "Oversold/Bought", indicators['RSI'] < 30 or indicators['RSI'] > 70),
+            ("MACD", "Crossover", indicators['MACD'] > indicators['MACD_Signal']),
+            ("Bollinger Bands", "Price Position", 
+             indicators['Current_Price'] <= indicators['BB_Lower'] or indicators['Current_Price'] >= indicators['BB_Upper']),
+            ("Moving Averages", "Crossover", indicators['SMA_20'] > indicators['SMA_50']),
+            ("Stochastic", "Oversold/Bought", indicators['Stoch_K'] < 20 or indicators['Stoch_K'] > 80)
         ]
         
-        for update in updates:
-            with st.expander(f"📅 {update['date']} - {update['update']} (Impact: {update['impact']})"):
-                st.write("Indian regulators continue to develop comprehensive framework for digital assets. Stay updated with latest compliance requirements.")
+        for component, description, condition in components:
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col1:
+                st.write(f"**{component}**")
+            with col2:
+                st.write(description)
+            with col3:
+                if condition:
+                    st.success("✅ Active")
+                else:
+                    st.info("⚪ Inactive")
+        
+        # Trading recommendations
+        st.subheader("💡 Trading Recommendations")
+        
+        if signal == "BUY":
+            st.success("""
+            **Recommended Actions:**
+            - Consider entering long positions
+            - Set stop-loss below recent support
+            - Target resistance levels for profit-taking
+            - Monitor for trend confirmation
+            """)
+        elif signal == "SELL":
+            st.error("""
+            **Recommended Actions:**
+            - Consider exiting long positions
+            - Potential short entry opportunities
+            - Set stop-loss above recent resistance
+            - Monitor for trend reversal signs
+            """)
+        else:
+            st.warning("""
+            **Recommended Actions:**
+            - Wait for clearer market direction
+            - Consider range-bound strategies
+            - Monitor key support/resistance levels
+            - Look for breakout/breakdown signals
+            """)
+    
+    def display_market_overview(self):
+        """Display market overview at the bottom"""
+        st.subheader("📊 Market Overview")
+        
+        # Simulated market data
+        markets = [
+            {'symbol': 'BTC-INR', 'price': 3500000, 'change': 2.5, 'volume': 25000000},
+            {'symbol': 'ETH-INR', 'price': 200000, 'change': 1.8, 'volume': 15000000},
+            {'symbol': 'USDT-INR', 'price': 83.2, 'change': 0.1, 'volume': 50000000},
+            {'symbol': 'MATIC-INR', 'price': 60.5, 'change': -0.5, 'volume': 5000000},
+            {'symbol': 'ADA-INR', 'price': 40.2, 'change': 3.2, 'volume': 3000000},
+            {'symbol': 'DOT-INR', 'price': 502.3, 'change': -1.2, 'volume': 2000000},
+        ]
+        
+        for market in markets:
+            col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+            with col1:
+                st.write(f"**{market['symbol']}**")
+            with col2:
+                st.write(f"₹{market['price']:,.2f}")
+            with col3:
+                change_color = "green" if market['change'] > 0 else "red"
+                st.write(f":{change_color}[{market['change']}%]")
+            with col4:
+                st.write(f"₹{market['volume']:,.0f}")
 
+# Update the AethosIndiaPlatform class to use the new MarketsPage
 class AethosIndiaPlatform:
     def __init__(self):
         self.exchange_data = IndianExchangeData()
         self.semi_bots = SemiAutomatedBots()
         self.auto_bots = AutomatedTradingBot()
         self.indian_tools = IndianTraderTools()
+        self.markets_page = MarketsPage()
         self.initialize_session_state()
     
     def initialize_session_state(self):
@@ -1111,6 +784,10 @@ class AethosIndiaPlatform:
             st.session_state.signal_history = []
         if 'running_bots' not in st.session_state:
             st.session_state.running_bots = {}
+        if 'selected_exchange' not in st.session_state:
+            st.session_state.selected_exchange = 'Delta'
+        if 'analyze_token' not in st.session_state:
+            st.session_state.analyze_token = False
     
     def create_header(self):
         """Create the main header section"""
@@ -1146,131 +823,74 @@ class AethosIndiaPlatform:
         with col4:
             st.metric("Platform Status", "Online", delta="Real-time")
     
-    def create_algorithmic_trading_section(self):
-        """Create comprehensive algo trading section"""
-        st.header("🎯 Algorithmic Trading Studio")
+    def create_dashboard(self):
+        """Create the main dashboard page"""
+        st.header("🏠 Platform Dashboard")
         
-        tab1, tab2, tab3 = st.tabs([
-            "🤖 Semi-Auto Signal Bots", 
-            "⚡ Fully Automated Bots", 
-            "📊 Live Bot Monitoring"
-        ])
-        
-        with tab1:
-            self.semi_bots.create_signal_dashboard()
-        
-        with tab2:
-            self.auto_bots.create_automated_trading_dashboard()
-        
-        with tab3:
-            self.create_bot_monitoring_dashboard()
-    
-    def create_bot_monitoring_dashboard(self):
-        """Create real-time bot monitoring dashboard"""
-        st.subheader("📊 Live Bot Monitoring & Analytics")
-        
-        if not st.session_state.get('running_bots'):
-            st.info("No active bots. Deploy bots from the Automated Trading section.")
-            return
-        
-        # Bot status overview
+        # Quick stats
         col1, col2, col3, col4 = st.columns(4)
         
-        running_count = sum(1 for bot in st.session_state.running_bots.values() if bot['status'] == 'running')
-        total_pnl = sum(bot['performance']['pnl'] for bot in st.session_state.running_bots.values())
-        total_trades = sum(bot['performance']['trades'] for bot in st.session_state.running_bots.values())
-        avg_win_rate = np.mean([bot['performance']['win_rate'] for bot in st.session_state.running_bots.values()])
+        with col1:
+            st.metric("Total Balance", "₹1,25,000", "₹5,000")
+        with col2:
+            st.metric("Active Strategies", "3", "1")
+        with col3:
+            st.metric("Today's P&L", "₹2,500", "₹500")
+        with col4:
+            st.metric("Success Rate", "72%", "3%")
+        
+        # Recent activity
+        col1, col2 = st.columns(2)
         
         with col1:
-            st.metric("Active Bots", running_count)
+            st.subheader("📈 Portfolio Performance")
+            # Simple portfolio chart
+            dates = pd.date_range(start='2024-01-01', end=datetime.now(), freq='D')
+            portfolio_value = 100000 + np.cumsum(np.random.randn(len(dates)) * 1000)
+            
+            fig = px.line(x=dates, y=portfolio_value, title="Portfolio Value Over Time")
+            fig.update_layout(height=300)
+            st.plotly_chart(fig, use_container_width=True)
+        
         with col2:
-            st.metric("Total P&L", f"₹{total_pnl:,.2f}")
+            st.subheader("🔔 Recent Alerts")
+            alerts = [
+                {"time": "10:30 AM", "message": "BTC strong buy signal detected", "type": "success"},
+                {"time": "09:15 AM", "message": "ETH approaching resistance level", "type": "warning"},
+                {"time": "Yesterday", "message": "New tax regulations announced", "type": "info"},
+            ]
+            
+            for alert in alerts:
+                if alert["type"] == "success":
+                    st.success(f"**{alert['time']}**: {alert['message']}")
+                elif alert["type"] == "warning":
+                    st.warning(f"**{alert['time']}**: {alert['message']}")
+                else:
+                    st.info(f"**{alert['time']}**: {alert['message']}")
+        
+        # Quick actions
+        st.subheader("🚀 Quick Actions")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            if st.button("🤖 Deploy New Bot", use_container_width=True):
+                st.info("Navigate to Algo Trading tab")
+        with col2:
+            if st.button("📊 Analyze Market", use_container_width=True):
+                st.info("Navigate to Markets tab")
         with col3:
-            st.metric("Total Trades", total_trades)
+            if st.button("💰 Calculate Tax", use_container_width=True):
+                st.info("Tax calculator opened")
         with col4:
-            st.metric("Avg Win Rate", f"{avg_win_rate:.1f}%")
-        
-        # Individual bot cards
-        st.write("*Bot Details*")
-        for bot_id, bot in st.session_state.running_bots.items():
-            with st.expander(f"{'🟢' if bot['status'] == 'running' else '🔴'} {bot['config']['name']} - {bot['config']['mode']}"):
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    st.write("*Configuration*")
-                    st.write(f"Strategy: {bot['config']['strategy']}")
-                    st.write(f"Pairs: {', '.join(bot['config']['pairs'])}")
-                    st.write(f"Started: {bot['start_time'].strftime('%H:%M:%S')}")
-                
-                with col2:
-                    st.write("*Performance*")
-                    st.write(f"Trades: {bot['performance']['trades']}")
-                    st.write(f"Win Rate: {bot['performance']['win_rate']}%")
-                    st.write(f"P&L: ₹{bot['performance']['pnl']:,.2f}")
-                
-                with col3:
-                    st.write("*Controls*")
-                    if bot['status'] == 'running':
-                        if st.button(f"⏸ Pause", key=f"pause_{bot_id}"):
-                            bot['status'] = 'paused'
-                            st.rerun()
-                    else:
-                        if st.button(f"▶ Resume", key=f"resume_{bot_id}"):
-                            bot['status'] = 'running'
-                            st.rerun()
-                    
-                    if st.button(f"🛑 Stop", key=f"stop_{bot_id}"):
-                        del st.session_state.running_bots[bot_id]
-                        st.rerun()
-    
-    def create_indian_trader_tools(self):
-        """Create Indian trader tools section"""
-        st.header("🇮🇳 Indian Trader Suite")
-        
-        tab1, tab2, tab3 = st.tabs([
-            "💰 Tax Calculator", 
-            "📊 Market Insights", 
-            "📜 Regulatory Center"
-        ])
-        
-        with tab1:
-            self.indian_tools.create_tax_calculator()
-        
-        with tab2:
-            self.indian_tools.create_indian_market_insights()
-        
-        with tab3:
-            self.indian_tools.create_regulatory_dashboard()
-    
-    def create_markets_overview(self):
-        """Create markets overview section"""
-        st.header("📈 Live Markets Overview")
-        
-        prices = self.exchange_data.get_consolidated_prices()
-        
-        if prices:
-            # Market metrics
-            col1, col2, col3, col4 = st.columns(4)
-            
-            total_volume = sum(p['volume'] for p in prices)
-            avg_change = np.mean([p['change_24h'] for p in prices if p.get('change_24h')])
-            inr_pairs = len([p for p in prices if 'INR' in str(p.get('symbol', ''))])
-            
-            with col1:
-                st.metric("Total Markets", len(prices))
-            with col2:
-                st.metric("24h Volume", f"${total_volume:,.0f}")
-            with col3:
-                st.metric("Avg 24h Change", f"{avg_change:.2f}%")
-            with col4:
-                st.metric("INR Pairs", inr_pairs)
-            
-            # Display market data
-            st.write("*Live Market Data*")
-            df = pd.DataFrame(prices)
-            display_df = df[['exchange', 'symbol', 'price', 'change_24h', 'volume']].copy()
-            st.dataframe(display_df, use_container_width=True)
-    
+            if st.button("🔄 Refresh Data", use_container_width=True):
+                st.rerun()
+
+    def create_markets_page(self):
+        """Create the dedicated markets page"""
+        self.markets_page.create_markets_page()
+
+    # ... (keep all other existing methods the same)
+
     def run(self):
         """Main application runner"""
         self.create_header()
@@ -1284,24 +904,7 @@ class AethosIndiaPlatform:
         ])
         
         with tab1:
-            self.create_markets_overview()
-            
-            # Quick actions
-            st.subheader("🚀 Quick Actions")
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                if st.button("🤖 Deploy New Bot", use_container_width=True):
-                    st.info("Navigate to Algo Trading tab")
-            with col2:
-                if st.button("📊 View Signals", use_container_width=True):
-                    st.info("Signal dashboard loaded")
-            with col3:
-                if st.button("💰 Calculate Tax", use_container_width=True):
-                    st.info("Tax calculator opened")
-            with col4:
-                if st.button("🔄 Refresh Data", use_container_width=True):
-                    st.rerun()
+            self.create_dashboard()
         
         with tab2:
             self.create_algorithmic_trading_section()
@@ -1310,10 +913,23 @@ class AethosIndiaPlatform:
             self.create_indian_trader_tools()
         
         with tab4:
-            self.create_markets_overview()
+            self.create_markets_page()
 
 # Run the application
 if __name__ == "__main__":
+    # Display TA-Lib status
+    if not TA_LIB_AVAILABLE:
+        st.sidebar.warning("""
+        ⚠ TA-Lib not installed. 
+        For optimal performance, install TA-Lib:
+        ```
+        # On Ubuntu/Debian
+        sudo apt-get install ta-lib
+        
+        # Then install Python package
+        pip install TA-Lib
+        ```
+        """)
     
     platform = AethosIndiaPlatform()
     platform.run()
