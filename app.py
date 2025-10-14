@@ -28,80 +28,130 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Load custom CSS (create a basic CSS if file doesn't exist)
-try:
-    with open('styles.css') as f:
-        st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
-except FileNotFoundError:
-    # Basic CSS as fallback
-    st.markdown("""
-    <style>
-    .main-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 2rem;
-        border-radius: 10px;
-        margin-bottom: 2rem;
-        color: white;
-    }
-    .platform-tagline {
-        font-size: 1.2rem;
-        opacity: 0.9;
-        margin-top: 0.5rem;
-    }
-    .regulatory-alert {
-        background-color: #fff3cd;
-        border: 1px solid #ffeaa7;
-        border-radius: 5px;
-        padding: 1rem;
-        margin: 1rem 0;
-    }
-    .exchange-button {
-        padding: 0.5rem 1rem;
-        margin: 0.2rem;
-        border-radius: 5px;
-        border: 1px solid #ddd;
-        background: white;
-        cursor: pointer;
-    }
-    .exchange-button.active {
-        background: #667eea;
-        color: white;
-        border-color: #667eea;
-    }
-    .token-card {
-        background: white;
-        border-radius: 10px;
-        padding: 1.5rem;
-        margin: 1rem 0;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        border-left: 4px solid #667eea;
-    }
-    .indicator-box {
-        background: #f8f9fa;
-        border-radius: 8px;
-        padding: 1rem;
-        margin: 0.5rem 0;
-        text-align: center;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+# Load custom CSS
+st.markdown("""
+<style>
+.main-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 2rem;
+    border-radius: 10px;
+    margin-bottom: 2rem;
+    color: white;
+}
+.platform-tagline {
+    font-size: 1.2rem;
+    opacity: 0.9;
+    margin-top: 0.5rem;
+}
+.regulatory-alert {
+    background-color: #fff3cd;
+    border: 1px solid #ffeaa7;
+    border-radius: 5px;
+    padding: 1rem;
+    margin: 1rem 0;
+}
+.exchange-button {
+    padding: 0.5rem 1rem;
+    margin: 0.2rem;
+    border-radius: 5px;
+    border: 1px solid #ddd;
+    background: white;
+    cursor: pointer;
+}
+.exchange-button.active {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+}
+.token-card {
+    background: white;
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin: 1rem 0;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    border-left: 4px solid #667eea;
+}
+.indicator-box {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 0.5rem 0;
+    text-align: center;
+}
+.positive { color: #00d4aa; }
+.negative { color: #ff4b4b; }
+.neutral { color: #ffa500; }
+</style>
+""", unsafe_allow_html=True)
+
+class CoinMarketCapAPI:
+    """CoinMarketCap API integration for real fundamental data"""
+    
+    def __init__(self):
+        self.base_url = "https://pro-api.coinmarketcap.com/v1"
+        self.api_key = st.secrets.get("COIN_MARKET_CAP_API_KEY", "")
+        
+    def make_request(self, endpoint, params=None):
+        """Make authenticated request to CMC API"""
+        if not self.api_key:
+            st.error("❌ CoinMarketCap API key not found. Please add COIN_MARKET_CAP_API_KEY to Streamlit secrets.")
+            return None
+            
+        headers = {
+            'X-CMC_PRO_API_KEY': self.api_key,
+            'Accept': 'application/json'
+        }
+        
+        try:
+            url = f"{self.base_url}/{endpoint}"
+            response = requests.get(url, headers=headers, params=params, timeout=10)
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                st.error(f"❌ CMC API Error: {response.status_code} - {response.text}")
+                return None
+        except Exception as e:
+            st.error(f"❌ Error fetching CMC data: {e}")
+            return None
+    
+    def get_crypto_listings(self, limit=100, convert='USD'):
+        """Get top cryptocurrency listings"""
+        params = {
+            'limit': limit,
+            'convert': convert,
+            'sort': 'market_cap',
+            'sort_dir': 'desc'
+        }
+        return self.make_request('cryptocurrency/listings/latest', params)
+    
+    def get_crypto_info(self, symbol):
+        """Get detailed information for a specific cryptocurrency"""
+        params = {
+            'symbol': symbol.upper(),
+            'convert': 'INR,USD'
+        }
+        return self.make_request('cryptocurrency/quotes/latest', params)
+    
+    def get_metadata(self, symbol):
+        """Get metadata for a cryptocurrency"""
+        params = {
+            'symbol': symbol.upper()
+        }
+        return self.make_request('cryptocurrency/info', params)
+    
+    def get_global_metrics(self):
+        """Get global cryptocurrency metrics"""
+        params = {
+            'convert': 'INR,USD'
+        }
+        return self.make_request('global-metrics/quotes/latest', params)
 
 class DeltaExchange:
     def __init__(self):
         self.base_url = "https://api.delta.exchange"
-        # Use st.secrets or environment variables
         self.api_key = st.secrets.get("DELTA_API_KEY", "") if hasattr(st, 'secrets') else ""
         self.api_secret = st.secrets.get("DELTA_API_SECRET", "") if hasattr(st, 'secrets') else ""
-    
-    def _sign_request(self, method, path, body=''):
-        timestamp = str(int(time.time()))
-        signature_payload = timestamp + method + path + body
-        signature = hmac.new(
-            self.api_secret.encode('utf-8'),
-            signature_payload.encode('utf-8'),
-            hashlib.sha256
-        ).hexdigest()
-        return timestamp, signature
     
     def get_products(self):
         """Get available trading products"""
@@ -124,58 +174,28 @@ class DeltaExchange:
         except Exception as e:
             st.error(f"Error fetching Delta ticker: {e}")
             return None
-    
-    def get_orderbook(self, symbol):
-        """Get order book data"""
-        try:
-            response = requests.get(f"{self.base_url}/v2/orderbook/{symbol}", timeout=10)
-            if response.status_code == 200:
-                return response.json().get('result')
-            return None
-        except Exception as e:
-            st.error(f"Error fetching Delta orderbook: {e}")
-            return None
-    
-    def get_ohlc(self, symbol, resolution=60, limit=100):
-        """Get OHLC data"""
-        try:
-            response = requests.get(
-                f"{self.base_url}/v2/history/candles",
-                params={
-                    'symbol': symbol,
-                    'resolution': resolution,
-                    'limit': limit
-                },
-                timeout=10
-            )
-            if response.status_code == 200:
-                return response.json().get('result', [])
-            return []
-        except Exception as e:
-            st.error(f"Error fetching Delta OHLC: {e}")
-            return []
 
 class IndianExchanges:
-    """Simulated Indian exchange data"""
+    """Indian exchange data for CoinDCX, Coinswitch, Mudrex, and ZebPay"""
     def __init__(self):
         self.exchanges = {
-            'WazirX': {
-                'base_url': 'https://api.wazirx.com/api/v2',
-                'pairs': ['btcinr', 'ethinr', 'usdtinr', 'maticinr', 'adainr', 'dodinr', 'shibinr']
-            },
             'CoinDCX': {
-                'base_url': 'https://api.coindcx.com/exchange/ticker',
-                'pairs': ['BTCINR', 'ETHINR', 'USDTINR', 'MATICINR', 'ADAINR', 'DOTINR']
+                'pairs': ['BTCINR', 'ETHINR', 'USDTINR', 'MATICINR', 'ADAINR', 'DOTINR', 'SOLINR', 'XRPINR', 'BNBINR']
+            },
+            'Coinswitch': {
+                'pairs': ['BTC-INR', 'ETH-INR', 'USDT-INR', 'MATIC-INR', 'ADA-INR', 'DOT-INR']
+            },
+            'Mudrex': {
+                'pairs': ['BTC-INR', 'ETH-INR', 'USDT-INR', 'MATIC-INR', 'SOL-INR', 'ADA-INR']
             },
             'ZebPay': {
-                'base_url': 'https://www.zebapi.com/pro/v1/market',
-                'pairs': ['BTC-INR', 'ETH-INR', 'USDT-INR', 'MATIC-INR']
+                'pairs': ['BTC-INR', 'ETH-INR', 'USDT-INR', 'MATIC-INR', 'ADA-INR', 'SOL-INR']
             }
         }
     
     def get_ticker(self, exchange, symbol):
         """Get ticker data from Indian exchange (simulated)"""
-        # Simulated price data with realistic variations
+        # Base prices for simulation
         base_prices = {
             'BTCINR': 3500000,
             'ETHINR': 200000,
@@ -183,15 +203,24 @@ class IndianExchanges:
             'MATICINR': 60,
             'ADAINR': 40,
             'DOTINR': 500,
-            'SHIBINR': 0.002
+            'SOLINR': 8000,
+            'XRPINR': 50,
+            'BNBINR': 25000
         }
         
+        # Clean symbol for lookup
         symbol_upper = symbol.upper().replace('-', '').replace('_', '')
         base_price = base_prices.get(symbol_upper, 100)
         
-        # Add some variation based on exchange and random factors
-        exchange_factors = {'WazirX': 1.0, 'CoinDCX': 0.998, 'ZebPay': 1.002}
-        variation = np.random.uniform(-0.02, 0.02)  # ±2% variation
+        # Exchange-specific variations
+        exchange_factors = {
+            'CoinDCX': 1.0, 
+            'Coinswitch': 0.998, 
+            'Mudrex': 1.001,
+            'ZebPay': 1.002
+        }
+        
+        variation = np.random.uniform(-0.02, 0.02)
         price = base_price * exchange_factors.get(exchange, 1.0) * (1 + variation)
         
         return {
@@ -208,7 +237,8 @@ class MarketDataProvider:
     def __init__(self):
         self.delta = DeltaExchange()
         self.indian = IndianExchanges()
-        self.available_exchanges = ['Delta', 'WazirX', 'CoinDCX', 'ZebPay']
+        self.cmc = CoinMarketCapAPI()
+        self.available_exchanges = ['Delta', 'CoinDCX', 'Coinswitch', 'Mudrex', 'ZebPay']
     
     def get_exchange_symbols(self, exchange):
         """Get available symbols for an exchange"""
@@ -238,40 +268,24 @@ class MarketDataProvider:
     
     def get_technical_indicators(self, symbol, exchange):
         """Calculate technical indicators for a symbol"""
-        # Generate sample price data
-        np.random.seed(hash(symbol) % 1000)  # Consistent seed per symbol
+        np.random.seed(hash(symbol) % 1000)
         n_points = 200
         
-        # Generate realistic price series
         returns = np.random.normal(0.001, 0.02, n_points)
         prices = 100 * np.cumprod(1 + returns)
         
         if TA_LIB_AVAILABLE:
-            # RSI
             rsi = talib.RSI(prices, timeperiod=14)[-1]
-            
-            # MACD
             macd, macd_signal, macd_hist = talib.MACD(prices)
-            macd_val = macd[-1]
-            macd_signal_val = macd_signal[-1]
-            
-            # Bollinger Bands
             upper, middle, lower = talib.BBANDS(prices, timeperiod=20, nbdevup=2, nbdevdn=2)
-            bb_upper = upper[-1]
-            bb_lower = lower[-1]
-            
-            # Moving Averages
             sma_20 = talib.SMA(prices, timeperiod=20)[-1]
             sma_50 = talib.SMA(prices, timeperiod=50)[-1]
-            
-            # Stochastic
             high_prices = prices * (1 + np.abs(np.random.normal(0, 0.01, n_points)))
             low_prices = prices * (1 - np.abs(np.random.normal(0, 0.01, n_points)))
             slowk, slowd = talib.STOCH(high_prices, low_prices, prices)
             stoch_k = slowk[-1]
             stoch_d = slowd[-1]
         else:
-            # Manual calculations
             rsi = 50 + np.random.uniform(-20, 20)
             macd_val = np.random.uniform(-2, 2)
             macd_signal_val = np.random.uniform(-2, 2)
@@ -284,8 +298,8 @@ class MarketDataProvider:
         
         return {
             'RSI': rsi,
-            'MACD': macd_val,
-            'MACD_Signal': macd_signal_val,
+            'MACD': macd_val if TA_LIB_AVAILABLE else macd_val,
+            'MACD_Signal': macd_signal_val if TA_LIB_AVAILABLE else macd_signal_val,
             'BB_Upper': bb_upper,
             'BB_Lower': bb_lower,
             'SMA_20': sma_20,
@@ -295,72 +309,207 @@ class MarketDataProvider:
             'Current_Price': prices[-1]
         }
     
-    def get_fundamental_info(self, symbol):
-        """Get fundamental information about a token"""
-        # Simulated fundamental data
-        fundamentals = {
-            'BTC': {
-                'name': 'Bitcoin',
-                'market_cap': '₹65,00,000 Cr',
-                'circulating_supply': '19.5M',
-                'max_supply': '21M',
-                'volume_24h': '₹25,000 Cr',
-                'description': 'First decentralized cryptocurrency using blockchain technology',
-                'sentiment': 'Bullish',
-                'risk_level': 'Medium',
-                'adoption_rate': 'High'
-            },
-            'ETH': {
-                'name': 'Ethereum',
-                'market_cap': '₹25,00,000 Cr',
-                'circulating_supply': '120M',
-                'max_supply': 'Unlimited',
-                'volume_24h': '₹15,000 Cr',
-                'description': 'Blockchain platform for smart contracts and decentralized applications',
-                'sentiment': 'Bullish',
-                'risk_level': 'Medium',
-                'adoption_rate': 'High'
-            },
-            'USDT': {
-                'name': 'Tether',
-                'market_cap': '₹8,30,000 Cr',
-                'circulating_supply': '82B',
-                'max_supply': 'Unlimited',
-                'volume_24h': '₹50,000 Cr',
-                'description': 'Stablecoin pegged to the US Dollar',
-                'sentiment': 'Neutral',
-                'risk_level': 'Low',
-                'adoption_rate': 'Very High'
-            },
-            'MATIC': {
-                'name': 'Polygon',
-                'market_cap': '₹6,500 Cr',
-                'circulating_supply': '9.3B',
-                'max_supply': '10B',
-                'volume_24h': '₹500 Cr',
-                'description': 'Layer 2 scaling solution for Ethereum',
-                'sentiment': 'Bullish',
-                'risk_level': 'High',
-                'adoption_rate': 'Medium'
+    def get_real_fundamental_data(self, symbol):
+        """Get REAL fundamental data from CoinMarketCap"""
+        # Extract base symbol for CMC lookup
+        base_symbol = self._extract_base_symbol(symbol)
+        
+        # Get quotes data
+        quotes_data = self.cmc.get_crypto_info(base_symbol)
+        if not quotes_data:
+            return self._get_fallback_data(base_symbol)
+        
+        # Get metadata
+        metadata = self.cmc.get_metadata(base_symbol)
+        
+        return self._parse_cmc_data(quotes_data, metadata, base_symbol)
+    
+    def _extract_base_symbol(self, symbol):
+        """Extract base symbol from trading pair"""
+        # Remove exchange-specific suffixes and quote currencies
+        symbol_clean = symbol.upper().replace('-', '').replace('_', '').replace('INR', '').replace('USDT', '')
+        
+        # Common cryptocurrency symbols
+        crypto_symbols = ['BTC', 'ETH', 'USDT', 'BNB', 'SOL', 'XRP', 'ADA', 'AVAX', 
+                         'DOT', 'MATIC', 'LINK', 'LTC', 'BCH', 'XLM', 'ATOM']
+        
+        for crypto in crypto_symbols:
+            if crypto in symbol_clean:
+                return crypto
+        
+        return symbol_clean[:4] if symbol_clean else symbol
+    
+    def _parse_cmc_data(self, quotes_data, metadata, symbol):
+        """Parse CMC API response into structured data"""
+        try:
+            data = quotes_data.get('data', {})
+            if not data:
+                return self._get_fallback_data(symbol)
+            
+            # Get the first cryptocurrency in response
+            crypto_key = list(data.keys())[0]
+            crypto_data = data[crypto_key]
+            quote_data = crypto_data.get('quote', {}).get('USD', {})
+            
+            # Parse metadata if available
+            meta_info = {}
+            if metadata and 'data' in metadata:
+                meta_data = metadata['data'].get(crypto_key, {})
+                meta_info = {
+                    'description': meta_data.get('description', ''),
+                    'logo': meta_data.get('logo', ''),
+                    'urls': meta_data.get('urls', {}),
+                    'tags': meta_data.get('tags', []),
+                    'date_added': meta_data.get('date_added', ''),
+                    'category': meta_data.get('category', '')
+                }
+            
+            # Calculate additional metrics
+            market_cap = quote_data.get('market_cap', 0)
+            volume_24h = quote_data.get('volume_24h', 0)
+            circulating_supply = crypto_data.get('circulating_supply', 0)
+            total_supply = crypto_data.get('total_supply', 0)
+            max_supply = crypto_data.get('max_supply', 0)
+            
+            # Calculate volume to market cap ratio
+            volume_mcap_ratio = (volume_24h / market_cap) * 100 if market_cap > 0 else 0
+            
+            # Determine market sentiment
+            percent_change_24h = quote_data.get('percent_change_24h', 0)
+            percent_change_7d = quote_data.get('percent_change_7d', 0)
+            sentiment = self._calculate_sentiment(percent_change_24h, percent_change_7d)
+            
+            # Calculate risk level
+            risk_level = self._calculate_risk_level(
+                market_cap, 
+                volume_mcap_ratio,
+                percent_change_24h
+            )
+            
+            return {
+                'name': crypto_data.get('name', symbol),
+                'symbol': crypto_data.get('symbol', symbol),
+                'price_usd': quote_data.get('price', 0),
+                'price_inr': quote_data.get('price', 0) * 83,  # Approximate conversion
+                'market_cap': market_cap,
+                'market_cap_display': f"${market_cap:,.0f}" if market_cap else "N/A",
+                'volume_24h': volume_24h,
+                'volume_24h_display': f"${volume_24h:,.0f}" if volume_24h else "N/A",
+                'circulating_supply': circulating_supply,
+                'circulating_supply_display': f"{circulating_supply:,.0f}" if circulating_supply else "N/A",
+                'total_supply': total_supply,
+                'total_supply_display': f"{total_supply:,.0f}" if total_supply else "N/A",
+                'max_supply': max_supply,
+                'max_supply_display': f"{max_supply:,.0f}" if max_supply else "Unlimited",
+                'percent_change_1h': quote_data.get('percent_change_1h', 0),
+                'percent_change_24h': percent_change_24h,
+                'percent_change_7d': percent_change_7d,
+                'percent_change_30d': quote_data.get('percent_change_30d', 0),
+                'market_cap_rank': crypto_data.get('cmc_rank', 'N/A'),
+                'volume_mcap_ratio': volume_mcap_ratio,
+                'sentiment': sentiment,
+                'risk_level': risk_level,
+                'description': meta_info.get('description', 'No description available'),
+                'website': meta_info.get('urls', {}).get('website', [''])[0] if meta_info.get('urls') else '',
+                'explorer': meta_info.get('urls', {}).get('explorer', [''])[0] if meta_info.get('urls') else '',
+                'tags': meta_info.get('tags', []),
+                'category': meta_info.get('category', 'cryptocurrency'),
+                'fully_diluted_market_cap': quote_data.get('fully_diluted_market_cap', 0),
+                'fully_diluted_market_cap_display': f"${quote_data.get('fully_diluted_market_cap', 0):,.0f}" if quote_data.get('fully_diluted_market_cap') else "N/A"
             }
+            
+        except Exception as e:
+            st.error(f"Error parsing CMC data: {e}")
+            return self._get_fallback_data(symbol)
+    
+    def _calculate_sentiment(self, change_24h, change_7d):
+        """Calculate market sentiment based on price changes"""
+        if change_24h > 5 and change_7d > 10:
+            return "Very Bullish"
+        elif change_24h > 2 and change_7d > 5:
+            return "Bullish"
+        elif change_24h < -5 and change_7d < -10:
+            return "Very Bearish"
+        elif change_24h < -2 and change_7d < -5:
+            return "Bearish"
+        else:
+            return "Neutral"
+    
+    def _calculate_risk_level(self, market_cap, volume_ratio, change_24h):
+        """Calculate risk level based on multiple factors"""
+        risk_score = 0
+        
+        # Market cap factor (higher cap = lower risk)
+        if market_cap > 10000000000:  # $10B+
+            risk_score += 1
+        elif market_cap > 1000000000:  # $1B-$10B
+            risk_score += 2
+        elif market_cap > 100000000:   # $100M-$1B
+            risk_score += 3
+        else:                          # <$100M
+            risk_score += 4
+        
+        # Volume ratio factor (higher ratio = lower risk)
+        if volume_ratio > 10:
+            risk_score += 1
+        elif volume_ratio > 5:
+            risk_score += 2
+        elif volume_ratio > 2:
+            risk_score += 3
+        else:
+            risk_score += 4
+        
+        # Volatility factor
+        if abs(change_24h) < 2:
+            risk_score += 1
+        elif abs(change_24h) < 5:
+            risk_score += 2
+        elif abs(change_24h) < 10:
+            risk_score += 3
+        else:
+            risk_score += 4
+        
+        # Determine risk level
+        if risk_score <= 6:
+            return "Low"
+        elif risk_score <= 9:
+            return "Medium"
+        else:
+            return "High"
+    
+    def _get_fallback_data(self, symbol):
+        """Provide fallback data when CMC API fails"""
+        return {
+            'name': symbol,
+            'symbol': symbol,
+            'price_usd': 0,
+            'price_inr': 0,
+            'market_cap': 0,
+            'market_cap_display': "N/A",
+            'volume_24h': 0,
+            'volume_24h_display': "N/A",
+            'circulating_supply': 0,
+            'circulating_supply_display': "N/A",
+            'total_supply': 0,
+            'total_supply_display': "N/A",
+            'max_supply': 0,
+            'max_supply_display': "N/A",
+            'percent_change_1h': 0,
+            'percent_change_24h': 0,
+            'percent_change_7d': 0,
+            'percent_change_30d': 0,
+            'market_cap_rank': "N/A",
+            'volume_mcap_ratio': 0,
+            'sentiment': "Neutral",
+            'risk_level': "Medium",
+            'description': "Data temporarily unavailable",
+            'website': '',
+            'explorer': '',
+            'tags': [],
+            'category': 'cryptocurrency',
+            'fully_diluted_market_cap': 0,
+            'fully_diluted_market_cap_display': "N/A"
         }
-        
-        # Extract base symbol (remove exchange and quote currency)
-        base_symbol = symbol.split('-')[0].split('_')[0].upper()
-        if base_symbol.endswith('INR'):
-            base_symbol = base_symbol[:-3]
-        
-        return fundamentals.get(base_symbol, {
-            'name': base_symbol,
-            'market_cap': '₹1,000 Cr',
-            'circulating_supply': '100M',
-            'max_supply': '1B',
-            'volume_24h': '₹100 Cr',
-            'description': 'Cryptocurrency token',
-            'sentiment': 'Neutral',
-            'risk_level': 'Medium',
-            'adoption_rate': 'Medium'
-        })
 
 class TechnicalAnalysis:
     """Technical analysis utilities"""
@@ -419,24 +568,15 @@ class MarketsPage:
         
         # Exchange selection
         st.subheader("🏢 Select Exchange")
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
         
-        with col1:
-            if st.button("Δ Delta", use_container_width=True, 
-                        type="primary" if st.session_state.get('selected_exchange') == 'Delta' else "secondary"):
-                st.session_state.selected_exchange = 'Delta'
-        with col2:
-            if st.button("Ⓦ WazirX", use_container_width=True,
-                        type="primary" if st.session_state.get('selected_exchange') == 'WazirX' else "secondary"):
-                st.session_state.selected_exchange = 'WazirX'
-        with col3:
-            if st.button("Ⓒ CoinDCX", use_container_width=True,
-                        type="primary" if st.session_state.get('selected_exchange') == 'CoinDCX' else "secondary"):
-                st.session_state.selected_exchange = 'CoinDCX'
-        with col4:
-            if st.button("Ⓩ ZebPay", use_container_width=True,
-                        type="primary" if st.session_state.get('selected_exchange') == 'ZebPay' else "secondary"):
-                st.session_state.selected_exchange = 'ZebPay'
+        exchanges = ['Delta', 'CoinDCX', 'Coinswitch', 'Mudrex', 'ZebPay']
+        
+        for i, exchange in enumerate(exchanges):
+            with [col1, col2, col3, col4, col5][i]:
+                if st.button(f"🔗 {exchange}", use_container_width=True,
+                           type="primary" if st.session_state.get('selected_exchange') == exchange else "secondary"):
+                    st.session_state.selected_exchange = exchange
         
         # Initialize default exchange
         if 'selected_exchange' not in st.session_state:
@@ -603,34 +743,88 @@ class MarketsPage:
                 st.info("📉 Price below middle band")
     
     def display_fundamental_info(self, symbol):
-        """Display fundamental information about the token"""
-        fundamental_data = self.market_data.get_fundamental_info(symbol)
+        """Display REAL fundamental information about the token"""
+        st.subheader("💰 Real Fundamental Data (CoinMarketCap)")
+        
+        with st.spinner("Fetching real-time data from CoinMarketCap..."):
+            fundamental_data = self.market_data.get_real_fundamental_data(symbol)
         
         st.markdown('<div class="token-card">', unsafe_allow_html=True)
         
-        col1, col2 = st.columns(2)
+        # Price and Market Data
+        col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.subheader("📊 Token Fundamentals")
-            st.metric("Token Name", fundamental_data['name'])
-            st.metric("Market Cap", fundamental_data['market_cap'])
-            st.metric("Circulating Supply", fundamental_data['circulating_supply'])
-            st.metric("Max Supply", fundamental_data['max_supply'])
+            price_change_1h = fundamental_data['percent_change_1h']
+            price_change_24h = fundamental_data['percent_change_24h']
+            price_change_7d = fundamental_data['percent_change_7d']
+            
+            st.metric(
+                "USD Price", 
+                f"${fundamental_data['price_usd']:,.2f}",
+                f"{price_change_24h:.2f}%"
+            )
+            st.metric("INR Price", f"₹{fundamental_data['price_inr']:,.2f}")
         
         with col2:
-            st.subheader("📈 Market Data")
-            st.metric("24h Volume", fundamental_data['volume_24h'])
+            st.metric("Market Cap", fundamental_data['market_cap_display'])
+            st.metric("Market Cap Rank", f"#{fundamental_data['market_cap_rank']}")
+            st.metric("Fully Diluted MCap", fundamental_data['fully_diluted_market_cap_display'])
+        
+        with col3:
+            st.metric("24h Volume", fundamental_data['volume_24h_display'])
+            st.metric("Volume/MCap Ratio", f"{fundamental_data['volume_mcap_ratio']:.2f}%")
             
             # Sentiment indicator
             sentiment_color = {
-                'Bullish': 'green',
-                'Bearish': 'red',
-                'Neutral': 'orange'
+                'Very Bullish': 'green',
+                'Bullish': 'lightgreen',
+                'Neutral': 'orange',
+                'Bearish': 'lightcoral',
+                'Very Bearish': 'red'
             }.get(fundamental_data['sentiment'], 'gray')
             
             st.metric("Market Sentiment", fundamental_data['sentiment'])
-            
-            # Risk level
+        
+        with col4:
+            st.metric("Circulating Supply", fundamental_data['circulating_supply_display'])
+            st.metric("Total Supply", fundamental_data['total_supply_display'])
+            st.metric("Max Supply", fundamental_data['max_supply_display'])
+        
+        # Price performance chart
+        st.subheader("📈 Price Performance")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            delta_color = "normal"
+            if price_change_1h > 0:
+                delta_color = "normal"
+            st.metric("1h Change", f"{price_change_1h:.2f}%", delta_color=delta_color)
+        
+        with col2:
+            delta_color = "normal"
+            if price_change_24h > 0:
+                delta_color = "normal"
+            st.metric("24h Change", f"{price_change_24h:.2f}%", delta_color=delta_color)
+        
+        with col3:
+            delta_color = "normal"
+            if price_change_7d > 0:
+                delta_color = "normal"
+            st.metric("7d Change", f"{price_change_7d:.2f}%", delta_color=delta_color)
+        
+        with col4:
+            price_change_30d = fundamental_data['percent_change_30d']
+            delta_color = "normal"
+            if price_change_30d > 0:
+                delta_color = "normal"
+            st.metric("30d Change", f"{price_change_30d:.2f}%", delta_color=delta_color)
+        
+        # Risk Assessment
+        st.subheader("⚠️ Risk Assessment")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
             risk_color = {
                 'Low': 'green',
                 'Medium': 'orange',
@@ -638,31 +832,68 @@ class MarketsPage:
             }.get(fundamental_data['risk_level'], 'gray')
             
             st.metric("Risk Level", fundamental_data['risk_level'])
-            st.metric("Adoption Rate", fundamental_data['adoption_rate'])
-        
-        st.subheader("📝 Description")
-        st.info(fundamental_data['description'])
-        
-        # Additional metrics
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            # Simulated developer activity
-            dev_activity = np.random.randint(70, 95)
-            st.metric("Developer Activity", f"{dev_activity}%")
-            st.progress(dev_activity / 100)
+            
+            # Risk factors
+            if fundamental_data['risk_level'] == 'High':
+                st.error("High volatility and risk. Trade with caution.")
+            elif fundamental_data['risk_level'] == 'Medium':
+                st.warning("Moderate risk. Use proper risk management.")
+            else:
+                st.success("Lower risk profile. Still monitor positions.")
         
         with col2:
-            # Simulated community growth
-            community_growth = np.random.randint(60, 90)
-            st.metric("Community Growth", f"{community_growth}%")
-            st.progress(community_growth / 100)
+            # Liquidity score based on volume/mcap ratio
+            volume_ratio = fundamental_data['volume_mcap_ratio']
+            if volume_ratio > 10:
+                liquidity_score = "High"
+                st.success("💰 High Liquidity")
+            elif volume_ratio > 5:
+                liquidity_score = "Medium"
+                st.warning("💰 Medium Liquidity")
+            else:
+                liquidity_score = "Low"
+                st.error("💰 Low Liquidity")
+            
+            st.metric("Liquidity Score", liquidity_score)
         
         with col3:
-            # Simulated institutional interest
-            institutional_interest = np.random.randint(50, 85)
-            st.metric("Institutional Interest", f"{institutional_interest}%")
-            st.progress(institutional_interest / 100)
+            # Market cap category
+            market_cap = fundamental_data['market_cap']
+            if market_cap > 10000000000:  # $10B+
+                cap_category = "Large Cap"
+                st.success("🏢 Large Cap")
+            elif market_cap > 1000000000:  # $1B-$10B
+                cap_category = "Mid Cap"
+                st.warning("🏢 Mid Cap")
+            else:
+                cap_category = "Small Cap"
+                st.error("🏢 Small Cap")
+            
+            st.metric("Market Cap Category", cap_category)
+        
+        # Project Information
+        st.subheader("🔗 Project Information")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write(f"**Name:** {fundamental_data['name']}")
+            st.write(f"**Symbol:** {fundamental_data['symbol']}")
+            st.write(f"**Category:** {fundamental_data['category']}")
+            
+            if fundamental_data['website']:
+                st.write(f"**Website:** [{fundamental_data['website']}]({fundamental_data['website']})")
+            if fundamental_data['explorer']:
+                st.write(f"**Blockchain Explorer:** [{fundamental_data['explorer']}]({fundamental_data['explorer']})")
+        
+        with col2:
+            if fundamental_data['tags']:
+                st.write("**Tags:**")
+                for tag in fundamental_data['tags'][:5]:  # Show first 5 tags
+                    st.write(f"• {tag}")
+        
+        # Project Description
+        st.subheader("📝 Project Description")
+        st.info(fundamental_data['description'][:500] + "..." if len(fundamental_data['description']) > 500 else fundamental_data['description'])
         
         st.markdown('</div>', unsafe_allow_html=True)
     
@@ -764,7 +995,156 @@ class MarketsPage:
             with col4:
                 st.write(f"₹{market['volume']:,.0f}")
 
-# Update the AethosIndiaPlatform class to use the new MarketsPage
+# Simplified version of other classes to avoid errors
+class IndianExchangeData:
+    def __init__(self):
+        self.delta = DeltaExchange()
+    
+    def get_all_markets(self):
+        """Get markets from all Indian exchanges"""
+        markets = []
+        
+        # Delta Exchange products
+        delta_products = self.delta.get_products()
+        for product in delta_products[:20]:
+            if product and product.get('contract_type') in ['spot', 'perpetual_futures', 'futures']:
+                markets.append({
+                    'exchange': 'Delta',
+                    'symbol': product.get('symbol', ''),
+                    'product': product.get('contract_type', ''),
+                    'base_currency': product.get('underlying_asset', {}).get('symbol', ''),
+                    'quote_currency': product.get('settling_asset', {}).get('symbol', ''),
+                    'tick_size': product.get('tick_size', 0.01)
+                })
+        
+        # Add Indian exchange pairs
+        indian_pairs = ['BTC-INR', 'ETH-INR', 'SOL-INR', 'MATIC-INR', 'ADA-INR', 'DOT-INR']
+        for pair in indian_pairs:
+            markets.append({
+                'exchange': 'Indian Exchanges',
+                'symbol': pair,
+                'product': 'spot',
+                'base_currency': pair.split('-')[0],
+                'quote_currency': 'INR',
+                'tick_size': 0.01
+            })
+        
+        return markets
+    
+    def get_consolidated_prices(self):
+        """Get consolidated prices across exchanges"""
+        prices = []
+        
+        # Delta prices
+        products = self.delta.get_products()[:10]
+        for product in products:
+            if product:
+                ticker = self.delta.get_ticker(product.get('symbol'))
+                if ticker:
+                    prices.append({
+                        'exchange': 'Delta',
+                        'symbol': product.get('symbol', ''),
+                        'price': float(ticker.get('close', 0)),
+                        'volume': float(ticker.get('volume', 0)),
+                        'change_24h': float(ticker.get('change_24h', 0)),
+                        'product_type': product.get('contract_type', ''),
+                        'timestamp': datetime.now()
+                    })
+        
+        # Add Indian exchange prices (simulated)
+        indian_prices = {
+            'BTC-INR': 3500000,
+            'ETH-INR': 200000,
+            'SOL-INR': 8000,
+            'MATIC-INR': 60,
+            'ADA-INR': 40,
+            'DOT-INR': 500
+        }
+        
+        for pair, price in indian_prices.items():
+            prices.append({
+                'exchange': 'Indian Exchanges',
+                'symbol': pair,
+                'price': price,
+                'volume': np.random.uniform(100000, 500000),
+                'change_24h': np.random.uniform(-5, 5),
+                'product_type': 'spot',
+                'timestamp': datetime.now()
+            })
+        
+        return prices
+
+# Simplified TradingStrategies class
+class TradingStrategies:
+    """Semi-automated trading signal generators using TA-Lib"""
+    
+    @staticmethod
+    def rsi_strategy(data, period=14, oversold=30, overbought=70):
+        """RSI-based trading signals using TA-Lib"""
+        if len(data) < period:
+            return "NEUTRAL", 0
+        
+        if TA_LIB_AVAILABLE:
+            rsi = talib.RSI(np.array(data, dtype=float), timeperiod=period)[-1]
+        else:
+            # Manual RSI calculation
+            delta = np.diff(data)
+            gain = np.where(delta > 0, delta, 0)
+            loss = np.where(delta < 0, -delta, 0)
+            
+            avg_gain = np.mean(gain[-period:])
+            avg_loss = np.mean(loss[-period:])
+            
+            if avg_loss == 0:
+                rsi = 100
+            else:
+                rs = avg_gain / avg_loss
+                rsi = 100 - (100 / (1 + rs))
+        
+        if rsi < oversold:
+            return "BUY", rsi
+        elif rsi > overbought:
+            return "SELL", rsi
+        else:
+            return "NEUTRAL", rsi
+
+# Simplified SemiAutomatedBots class
+class SemiAutomatedBots:
+    """Semi-automated bots that generate trading signals"""
+    
+    def __init__(self):
+        self.strategies = TradingStrategies()
+        self.exchange_data = IndianExchangeData()
+    
+    def create_signal_dashboard(self):
+        """Create dashboard for signal generation bots"""
+        st.subheader("🤖 Semi-Automated Signal Bots")
+        st.info("Signal bot functionality - Simplified version")
+
+# Simplified AutomatedTradingBot class
+class AutomatedTradingBot:
+    """Fully automated trading bot with paper and live trading"""
+    
+    def __init__(self):
+        self.exchange_data = IndianExchangeData()
+        self.paper_balance = 100000
+    
+    def create_automated_trading_dashboard(self):
+        """Create dashboard for automated trading bots"""
+        st.subheader("⚡ Fully Automated Trading Bots")
+        st.info("Automated trading functionality - Simplified version")
+
+# Simplified IndianTraderTools class
+class IndianTraderTools:
+    def __init__(self):
+        self.exchange_data = IndianExchangeData()
+    
+    def create_tax_calculator(self):
+        """Create advanced Indian crypto tax calculator"""
+        st.subheader("🇮🇳 Advanced Tax Calculator")
+        st.info("Tax calculator functionality - Simplified version")
+
+# Main Platform Class
 class AethosIndiaPlatform:
     def __init__(self):
         self.exchange_data = IndianExchangeData()
@@ -885,11 +1265,50 @@ class AethosIndiaPlatform:
             if st.button("🔄 Refresh Data", use_container_width=True):
                 st.rerun()
 
+    def create_algorithmic_trading_section(self):
+        """Create comprehensive algo trading section"""
+        st.header("🎯 Algorithmic Trading Studio")
+        
+        tab1, tab2, tab3 = st.tabs([
+            "🤖 Semi-Auto Signal Bots", 
+            "⚡ Fully Automated Bots", 
+            "📊 Live Bot Monitoring"
+        ])
+        
+        with tab1:
+            self.semi_bots.create_signal_dashboard()
+        
+        with tab2:
+            self.auto_bots.create_automated_trading_dashboard()
+        
+        with tab3:
+            st.subheader("📊 Live Bot Monitoring & Analytics")
+            st.info("Bot monitoring functionality - Simplified version")
+
+    def create_indian_trader_tools(self):
+        """Create Indian trader tools section"""
+        st.header("🇮🇳 Indian Trader Suite")
+        
+        tab1, tab2, tab3 = st.tabs([
+            "💰 Tax Calculator", 
+            "📊 Market Insights", 
+            "📜 Regulatory Center"
+        ])
+        
+        with tab1:
+            self.indian_tools.create_tax_calculator()
+        
+        with tab2:
+            st.subheader("📊 Indian Market Insights")
+            st.info("Market insights functionality - Simplified version")
+        
+        with tab3:
+            st.subheader("📜 Regulatory Compliance Center")
+            st.info("Regulatory information - Simplified version")
+
     def create_markets_page(self):
         """Create the dedicated markets page"""
         self.markets_page.create_markets_page()
-
-    # ... (keep all other existing methods the same)
 
     def run(self):
         """Main application runner"""
@@ -929,6 +1348,13 @@ if __name__ == "__main__":
         # Then install Python package
         pip install TA-Lib
         ```
+        """)
+    
+    # Check for CMC API key
+    if not st.secrets.get("COIN_MARKET_CAP_API_KEY"):
+        st.sidebar.error("""
+        ❌ CoinMarketCap API key not found.
+        Add COIN_MARKET_CAP_API_KEY to your Streamlit secrets for real fundamental data.
         """)
     
     platform = AethosIndiaPlatform()
