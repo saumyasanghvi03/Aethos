@@ -6,6 +6,7 @@ plotly>=5.17.0
 requests>=2.31.0
 python-dateutil>=2.8.2
 textblob
+bytez
 
 # Technical Analysis (choose one)
 TA-Lib>=0.4.28
